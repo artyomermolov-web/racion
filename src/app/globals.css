@@ -450,6 +450,25 @@ select.input {
   margin-bottom: 12px;
 }
 
+/* живой пересчёт калорий из макросов в ручной подстройке */
+.calc-kcal {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--fill);
+  border-radius: 12px;
+  margin-bottom: 14px;
+  font-size: 14px;
+  color: var(--label2);
+}
+.calc-kcal strong {
+  color: var(--label);
+  font-size: 16px;
+  font-weight: 600;
+}
+
 /* ---------- пустое состояние ---------- */
 .empty {
   text-align: center;

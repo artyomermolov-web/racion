@@ -109,9 +109,8 @@ export interface TargetsFormState {
 }
 
 function readTargetsDraft(formData: FormData): TargetsDraft {
+  // Калории не читаем — они выводятся из макросов в validateTargetsDraft.
   return {
-    kcalMin: field(formData, "kcalMin"),
-    kcalMax: field(formData, "kcalMax"),
     proteinMin: field(formData, "proteinMin"),
     proteinMax: field(formData, "proteinMax"),
     fatMin: field(formData, "fatMin"),

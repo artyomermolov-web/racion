@@ -1,31 +1,41 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { saveTargetsAction, type TargetsFormState } from "@/app/actions/profile";
-import type { TargetsDraft, TargetsErrors } from "@/core/nutrition";
+import {
+  kcalFromMacros,
+  type TargetsDraft,
+  type TargetsErrors,
+} from "@/core/nutrition";
 
-const RANGES: {
+const MACROS: {
   label: string;
-  unit: string;
   min: keyof TargetsDraft;
   max: keyof TargetsDraft;
 }[] = [
-  { label: "Калории", unit: "ккал", min: "kcalMin", max: "kcalMax" },
-  { label: "Белки", unit: "г", min: "proteinMin", max: "proteinMax" },
-  { label: "Жиры", unit: "г", min: "fatMin", max: "fatMax" },
-  { label: "Углеводы", unit: "г", min: "carbMin", max: "carbMax" },
+  { label: "Белки", min: "proteinMin", max: "proteinMax" },
+  { label: "Жиры", min: "fatMin", max: "fatMax" },
+  { label: "Углеводы", min: "carbMin", max: "carbMax" },
 ];
+
+/** Парсит строку в неотрицательное число; пусто/мусор → 0 (для живого расчёта). */
+function num(s: string | undefined): number {
+  const n = Number((s ?? "").replace(",", "."));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
 
 function NumField({
   name,
   label,
   value,
   error,
+  onChange,
 }: {
   name: keyof TargetsDraft;
   label: string;
-  value?: string;
+  value: string;
   error?: string;
+  onChange: (v: string) => void;
 }) {
   return (
     <div className="field">
@@ -36,7 +46,8 @@ function NumField({
         type="number"
         inputMode="numeric"
         className="input"
-        defaultValue={value ?? ""}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
         aria-invalid={error ? true : undefined}
       />
       {error ? <div className="error">{error}</div> : null}
@@ -49,8 +60,25 @@ export function TargetsForm({ defaults }: { defaults: TargetsDraft }) {
     saveTargetsAction,
     { errors: {}, values: defaults },
   );
-  const v = state.values;
+
+  // Локальное состояние полей — источник для живого пересчёта калорий.
+  const [v, setV] = useState<TargetsDraft>(defaults);
+  const set = (key: keyof TargetsDraft) => (val: string) =>
+    setV((prev) => ({ ...prev, [key]: val }));
+
   const e: TargetsErrors & { form?: string } = state.errors;
+
+  // Калории — производные от макросов, пересчитываются вживую.
+  const kcalMin = kcalFromMacros({
+    protein: num(v.proteinMin),
+    fat: num(v.fatMin),
+    carb: num(v.carbMin),
+  });
+  const kcalMax = kcalFromMacros({
+    protein: num(v.proteinMax),
+    fat: num(v.fatMax),
+    carb: num(v.carbMax),
+  });
 
   return (
     <details className="disclosure">
@@ -67,19 +95,28 @@ export function TargetsForm({ defaults }: { defaults: TargetsDraft }) {
           </div>
         ) : null}
 
-        {RANGES.map((r) => (
-          <div className="field-row" key={r.min}>
+        <div className="calc-kcal">
+          <span>Калории (считаются из Б/Ж/У)</span>
+          <strong className="num">
+            {kcalMin.toLocaleString("ru-RU")}–{kcalMax.toLocaleString("ru-RU")} ккал
+          </strong>
+        </div>
+
+        {MACROS.map((m) => (
+          <div className="field-row" key={m.min}>
             <NumField
-              name={r.min}
-              label={`${r.label}, от (${r.unit})`}
-              value={v[r.min]}
-              error={e[r.min]}
+              name={m.min}
+              label={`${m.label}, от (г)`}
+              value={v[m.min] ?? ""}
+              error={e[m.min]}
+              onChange={set(m.min)}
             />
             <NumField
-              name={r.max}
-              label={`до (${r.unit})`}
-              value={v[r.max]}
-              error={e[r.max]}
+              name={m.max}
+              label={`до (г)`}
+              value={v[m.max] ?? ""}
+              error={e[m.max]}
+              onChange={set(m.max)}
             />
           </div>
         ))}
@@ -87,8 +124,9 @@ export function TargetsForm({ defaults }: { defaults: TargetsDraft }) {
         <NumField
           name="fiberMin"
           label="Клетчатка, минимум (г)"
-          value={v.fiberMin}
+          value={v.fiberMin ?? ""}
           error={e.fiberMin}
+          onChange={set("fiberMin")}
         />
 
         <button type="submit" className="btn gray" disabled={pending}>

@@ -59,10 +59,9 @@ export default async function ProfilPage() {
     }
   }
 
+  // Калории в ручной форме считаются из Б/Ж/У, поэтому в дефолты не входят.
   const targetsDefaults: TargetsDraft | null = nutrition
     ? {
-        kcalMin: s(nutrition.kcalMin),
-        kcalMax: s(nutrition.kcalMax),
         proteinMin: s(nutrition.proteinMin),
         proteinMax: s(nutrition.proteinMax),
         fatMin: s(nutrition.fatMin),
@@ -96,7 +95,14 @@ export default async function ProfilPage() {
                 ))}
               </div>
             ) : null}
-            {targetsDefaults ? <TargetsForm defaults={targetsDefaults} /> : null}
+            {targetsDefaults ? (
+              // key завязан на сохранённую норму: при пересчёте форма сбрасывается
+              // на свежие значения, а не держит старое локальное состояние.
+              <TargetsForm
+                key={nutrition ? nutrition.id + nutrition.updatedAt.toISOString() : "none"}
+                defaults={targetsDefaults}
+              />
+            ) : null}
           </>
         ) : null}
 

@@ -140,7 +140,10 @@ export function validateBodyInput(draft: BodyInputDraft): BodyInputResult {
 // ---------------------------------------------------------------------------
 
 /** Разумные верхние пределы, чтобы отсечь опечатки/бессмыслицу. */
-const TARGETS_CAP = { kcal: 10000, macro: 2000, fiber: 200 } as const;
+const TARGETS_CAP = { macro: 2000, fiber: 200 } as const;
+
+/** Калорийность макроса: 1 г белка/углеводов = 4 ккал, 1 г жира = 9 ккал. */
+const KCAL_PER_GRAM = { protein: 4, fat: 9, carb: 4 } as const;
 
 export interface EditableTargets {
   kcalMin: number;
@@ -154,26 +157,46 @@ export interface EditableTargets {
   fiberMin: number;
 }
 
-export type TargetsDraft = Partial<Record<keyof EditableTargets, string>>;
-export type TargetsErrors = Partial<Record<keyof EditableTargets, string>>;
+/**
+ * Поля, которые пользователь редактирует вручную. Калории (kcalMin/kcalMax)
+ * не вводятся — они выводятся из макросов (см. kcalFromMacros).
+ */
+export type EditableTargetsInput = Exclude<
+  keyof EditableTargets,
+  "kcalMin" | "kcalMax"
+>;
+
+export type TargetsDraft = Partial<Record<EditableTargetsInput, string>>;
+export type TargetsErrors = Partial<Record<EditableTargetsInput, string>>;
 
 export interface TargetsResult {
   errors: TargetsErrors;
   value?: EditableTargets;
 }
 
+/** Калории из граммов макросов (4·Б + 9·Ж + 4·У). */
+export function kcalFromMacros(m: {
+  protein: number;
+  fat: number;
+  carb: number;
+}): number {
+  return (
+    KCAL_PER_GRAM.protein * m.protein +
+    KCAL_PER_GRAM.fat * m.fat +
+    KCAL_PER_GRAM.carb * m.carb
+  );
+}
+
 interface RangeSpec {
-  min: keyof EditableTargets;
-  max: keyof EditableTargets;
+  min: EditableTargetsInput;
+  max: EditableTargetsInput;
   label: string;
-  cap: number;
 }
 
 const RANGE_SPECS: RangeSpec[] = [
-  { min: "kcalMin", max: "kcalMax", label: "калорий", cap: TARGETS_CAP.kcal },
-  { min: "proteinMin", max: "proteinMax", label: "белка", cap: TARGETS_CAP.macro },
-  { min: "fatMin", max: "fatMax", label: "жиров", cap: TARGETS_CAP.macro },
-  { min: "carbMin", max: "carbMax", label: "углеводов", cap: TARGETS_CAP.macro },
+  { min: "proteinMin", max: "proteinMax", label: "белка" },
+  { min: "fatMin", max: "fatMax", label: "жиров" },
+  { min: "carbMin", max: "carbMax", label: "углеводов" },
 ];
 
 /** Целое ≥0 в допустимом пределе; иначе — текст ошибки. */
@@ -190,20 +213,21 @@ function parseGrams(
 }
 
 /**
- * Валидирует ручные диапазоны нормы: все поля — целые ≥0 в пределах, min ≤ max.
- * При успехе возвращает готовый к сохранению EditableTargets.
+ * Валидирует ручные диапазоны Б/Ж/У и клетчатки (целые ≥0 в пределах, min ≤ max)
+ * и выводит калории из макросов. При успехе возвращает готовый к сохранению
+ * EditableTargets с рассчитанными kcalMin/kcalMax.
  */
 export function validateTargetsDraft(draft: TargetsDraft): TargetsResult {
   const errors: TargetsErrors = {};
-  const parsed: Partial<EditableTargets> = {};
+  const g: Partial<Record<EditableTargetsInput, number>> = {};
 
   for (const spec of RANGE_SPECS) {
-    const lo = parseGrams(draft[spec.min], spec.cap);
-    const hi = parseGrams(draft[spec.max], spec.cap);
+    const lo = parseGrams(draft[spec.min], TARGETS_CAP.macro);
+    const hi = parseGrams(draft[spec.max], TARGETS_CAP.macro);
     if ("error" in lo) errors[spec.min] = lo.error;
-    else parsed[spec.min] = lo.value;
+    else g[spec.min] = lo.value;
     if ("error" in hi) errors[spec.max] = hi.error;
-    else parsed[spec.max] = hi.value;
+    else g[spec.max] = hi.value;
 
     if ("value" in lo && "value" in hi && lo.value > hi.value) {
       errors[spec.max] = `Максимум ${spec.label} меньше минимума`;
@@ -212,8 +236,30 @@ export function validateTargetsDraft(draft: TargetsDraft): TargetsResult {
 
   const fiber = parseGrams(draft.fiberMin, TARGETS_CAP.fiber);
   if ("error" in fiber) errors.fiberMin = fiber.error;
-  else parsed.fiberMin = fiber.value;
+  else g.fiberMin = fiber.value;
 
   if (Object.keys(errors).length > 0) return { errors };
-  return { errors, value: parsed as EditableTargets };
+
+  return {
+    errors,
+    value: {
+      kcalMin: kcalFromMacros({
+        protein: g.proteinMin!,
+        fat: g.fatMin!,
+        carb: g.carbMin!,
+      }),
+      kcalMax: kcalFromMacros({
+        protein: g.proteinMax!,
+        fat: g.fatMax!,
+        carb: g.carbMax!,
+      }),
+      proteinMin: g.proteinMin!,
+      proteinMax: g.proteinMax!,
+      fatMin: g.fatMin!,
+      fatMax: g.fatMax!,
+      carbMin: g.carbMin!,
+      carbMax: g.carbMax!,
+      fiberMin: g.fiberMin!,
+    },
+  };
 }
