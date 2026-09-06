@@ -19,6 +19,7 @@ const MACROS = [
   { key: "protein", label: "Белки", color: "var(--p)" },
   { key: "fat", label: "Жиры", color: "var(--f)" },
   { key: "carb", label: "Углеводы", color: "var(--c)" },
+  { key: "fiber", label: "Клетчатка", color: "var(--fb)" },
 ] as const;
 
 // Мета-строка «ключ — значение».
@@ -72,8 +73,7 @@ export default async function RecipePage({
             ))}
           </div>
           <div className="norm-fiber">
-            Клетчатка <span className="num">{perServing.fiber} г</span> · натрий{" "}
-            <span className="num">{perServing.sodium} мг</span>
+            Натрий <span className="num">{perServing.sodium} мг</span>
           </div>
         </div>
 

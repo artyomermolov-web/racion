@@ -31,12 +31,23 @@ const SORTS: { key: SortKey; label: string }[] = [
 
 const collator = new Intl.Collator("ru");
 
-function Macros({ p, f, c }: { p: number; f: number; c: number }) {
+function Macros({
+  p,
+  f,
+  c,
+  fiber,
+}: {
+  p: number;
+  f: number;
+  c: number;
+  fiber: number;
+}) {
   return (
     <span className="food-macros num">
       <span style={{ color: "var(--p)" }}>Б {p}</span>
       <span style={{ color: "var(--f)" }}>Ж {f}</span>
       <span style={{ color: "var(--c)" }}>У {c}</span>
+      <span style={{ color: "var(--fb)" }}>К {fiber}</span>
     </span>
   );
 }
@@ -131,6 +142,7 @@ export function BazaContent({
                     p={r.perServing.protein}
                     f={r.perServing.fat}
                     c={r.perServing.carb}
+                    fiber={r.perServing.fiber}
                   />
                 </div>
                 <span className="chev">›</span>
@@ -149,7 +161,12 @@ export function BazaContent({
                       ? ` · ${i.allergens.map((a) => label(ALLERGEN_LABELS, a)).join(", ")}`
                       : ""}
                   </div>
-                  <Macros p={i.per100.protein} f={i.per100.fat} c={i.per100.carb} />
+                  <Macros
+                    p={i.per100.protein}
+                    f={i.per100.fat}
+                    c={i.per100.carb}
+                    fiber={i.per100.fiber}
+                  />
                 </div>
               </div>
             ))}
