@@ -81,6 +81,132 @@ model NutritionProfile {
   @@index([userId])
 }
 
+// --- Еда: продукты и рецепты (тикет 13, модель тикета 04) ---
+// Теги (аллергены/слоты/диеты/техника) — через join-таблицы, а не scalar-списки:
+// SQLite их не поддерживает, а join даёт одинаковую схему на SQLite/PostgreSQL и
+// удобные запросы для фильтров. Значения-«enum» (unit, allergen, slot, tag,
+// equipment) хранятся строкой — по той же причине, что sex/activityLevel/goal
+// выше (SQLite не поддерживает Prisma enum); допустимые значения фиксируются
+// union-типами в seed-data.ts / core. КБЖУ рецепта не хранится — считается из
+// состава (/core/nutrition/recipe.ts).
+
+// Продукт-ингредиент. Нутриенты — на 100 г/мл (для шт — на 100 г съедобной части).
+model Ingredient {
+  id            String  @id @default(cuid())
+  name          String
+  // Группа продукта (двойная роль: категория в UI + ключ для будущего скоринга).
+  group         String
+  unit          String  // "g" | "ml" | "pcs"
+  // КБЖУ + клетчатка на 100 г; натрий в мг на 100 г. Источник — research-таблица
+  // (kbju-master.md D1: USDA/Скурихин).
+  kcalPer100    Float
+  proteinPer100 Float
+  fatPer100     Float
+  carbPer100    Float
+  fiberPer100   Float   @default(0)
+  sodiumPer100  Float   @default(0)
+  // Магазинная упаковка и цена-ориентир ₽ (цена ненадёжна, тикет 01).
+  packSize      Float
+  pricePerPack  Float
+  shelfLifeDays Int
+  // Кастом-продукт (тикет 04): isCustom + ownerUserId. Базовый — оба пусты.
+  isCustom      Boolean @default(false)
+  ownerUserId   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  allergens         IngredientAllergen[]
+  recipeIngredients RecipeIngredient[]
+
+  @@index([group])
+  @@index([ownerUserId])
+}
+
+model IngredientAllergen {
+  id           String @id @default(cuid())
+  ingredientId String
+  // "milk"|"gluten"|"egg"|"fish"|"meat"|"poultry"|"nuts"|"soy" (см. /core/nutrition).
+  allergen     String
+
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@unique([ingredientId, allergen])
+  @@index([allergen])
+}
+
+// Рецепт. КБЖУ считается из RecipeIngredient, поэтому здесь не хранится.
+model Recipe {
+  id           String  @id @default(cuid())
+  name         String
+  // Шаги приготовления — по одному на строку (разделитель \n).
+  steps        String
+  timeMin      Int
+  difficulty   Int     @default(1) // 1–3
+  servings     Int     @default(1)
+  // Кастом-рецепт и персонализация базового (тикет 04) — задел, UI позже.
+  isCustom     Boolean @default(false)
+  ownerUserId  String?
+  baseRecipeId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ingredients RecipeIngredient[]
+  slots       RecipeSlot[]
+  dietTags    RecipeDietTag[]
+  equipment   RecipeEquipment[]
+
+  @@index([ownerUserId])
+}
+
+model RecipeIngredient {
+  id           String @id @default(cuid())
+  recipeId     String
+  ingredientId String
+  // Масса в граммах на всё блюдо (для мл — миллилитры, плотность ~1; для шт —
+  // граммовый эквивалент). КБЖУ считается по этой массе.
+  grams        Float
+
+  recipe     Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id])
+
+  @@index([recipeId])
+  @@index([ingredientId])
+}
+
+model RecipeSlot {
+  id       String @id @default(cuid())
+  recipeId String
+  slot     String // "breakfast"|"lunch"|"dinner"|"snack"
+
+  recipe Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@unique([recipeId, slot])
+  @@index([slot])
+}
+
+model RecipeDietTag {
+  id       String @id @default(cuid())
+  recipeId String
+  tag      String // "vegetarian"|"vegan"|"pescatarian" (подписи — src/lib/food-labels)
+
+  recipe Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@unique([recipeId, tag])
+  @@index([tag])
+}
+
+model RecipeEquipment {
+  id        String @id @default(cuid())
+  recipeId  String
+  equipment String // "stove"|"oven"|"blender"|"multicooker"|"none"
+
+  recipe Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@unique([recipeId, equipment])
+}
+
 model Session {
   id String @id @default(cuid())
   // В БД хранится только SHA-256 хеш токена; сырой токен живёт в httpOnly-cookie.

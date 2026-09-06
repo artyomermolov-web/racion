@@ -1,18 +1,19 @@
 import { LargeTitleHeader } from "@/components/ios/LargeTitleHeader";
 import { ThemeToggle } from "@/components/ios/ThemeToggle";
-import { EmptyState } from "@/components/ios/EmptyState";
+import { getIngredients, getRecipes } from "@/lib/food";
+import { BazaContent } from "./BazaContent";
 
-export default function BazaPage() {
+// КБЖУ рецептов считается из состава на сервере (getRecipes), в БД не хранится.
+export default async function BazaPage() {
+  const [recipes, ingredients] = await Promise.all([
+    getRecipes(),
+    getIngredients(),
+  ]);
+
   return (
     <>
       <LargeTitleHeader title="База" trailing={<ThemeToggle />} />
-      <main>
-        <EmptyState
-          icon="📖"
-          title="База продуктов и рецептов"
-          description="Скоро здесь появится каталог продуктов и рецептов с поиском и фильтрами по КБЖУ."
-        />
-      </main>
+      <BazaContent recipes={recipes} ingredients={ingredients} />
     </>
   );
 }
