@@ -82,17 +82,29 @@ export default async function ProfilPage() {
             <NormCard norm={nutrition} />
             {explanation.length > 0 ? (
               <div className="explain">
+                {/* Предупреждения (ручная правка, защитный минимум) — всегда видны. */}
                 {manuallyAdjusted ? (
                   <p className="warn">
                     Вы подстроили норму вручную — она показана в карточке выше.
                     Ниже — как её посчитал калькулятор по вашим данным.
                   </p>
                 ) : null}
-                {explanation.map((p, i) => (
-                  <p key={i} className={p.startsWith("⚠") ? "warn" : undefined}>
-                    {p}
-                  </p>
-                ))}
+                {explanation
+                  .filter((p) => p.startsWith("⚠"))
+                  .map((p, i) => (
+                    <p key={`w${i}`} className="warn">
+                      {p}
+                    </p>
+                  ))}
+                {/* Сам расчёт свёрнут, чтобы не загромождать экран. */}
+                <details className="disclosure">
+                  <summary>Как рассчитана норма</summary>
+                  {explanation
+                    .filter((p) => !p.startsWith("⚠"))
+                    .map((p, i) => (
+                      <p key={i}>{p}</p>
+                    ))}
+                </details>
               </div>
             ) : null}
             {targetsDefaults ? (

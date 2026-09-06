@@ -37,6 +37,9 @@ describe("tdee", () => {
   it("высокая активность ×1.725", () => {
     expect(tdee(1800, "high")).toBeCloseTo(3105, 5);
   });
+  it("очень высокая активность ×1.9", () => {
+    expect(tdee(1800, "veryHigh")).toBeCloseTo(3420, 5);
+  });
 });
 
 // Эталон: мужчина 30/80/180, умеренная активность, «держать», без %жира.
@@ -65,18 +68,19 @@ describe("computeTargets — базовый расчёт (держать вес)
     expect(t.kcal).toEqual({ min: 2620, max: 2900 });
   });
 
-  it("белок по общей массе 1.6–2.0 г/кг (без %жира)", () => {
-    expect(t.protein).toEqual({ min: 128, max: 160 });
+  it("белок по общей массе, поддержание/набор 1.6–2.2 г/кг (kbju A8)", () => {
+    // 80·1.6=128 ; 80·2.2=176
+    expect(t.protein).toEqual({ min: 128, max: 176 });
   });
 
-  it("жиры: нижний порог 0.8 г/кг, верх ~30% калорий", () => {
-    // min 80·0.8=64 ; max 2759·0.30/9=91.97→92
+  it("жиры: диапазон 0.8–1.2 г/кг с потолком 30% калорий (kbju A8)", () => {
+    // min 80·0.8=64 ; max = min(80·1.2=96, 2759·0.30/9=91.97→92) = 92
     expect(t.fat).toEqual({ min: 64, max: 92 });
   });
 
   it("углеводы — остаток калорий диапазоном", () => {
-    // max=(2900−128·4−64·9)/4=453 ; min=(2620−160·4−92·9)/4=288
-    expect(t.carb).toEqual({ min: 288, max: 453 });
+    // max=(2900−128·4−64·9)/4=453 ; min=(2620−176·4−92·9)/4=272
+    expect(t.carb).toEqual({ min: 272, max: 453 });
   });
 
   it("клетчатка — минимум, зажата в 25–30 г", () => {
@@ -97,7 +101,7 @@ describe("computeTargets — цель сдвигает калории", () => {
 });
 
 describe("computeTargets — белок по сухой массе при известном %жира", () => {
-  it("LBM = вес·(1−%жир), белок 1.6–2.2 г/кг LBM", () => {
+  it("LBM = вес·(1−%жир), белок 1.6–2.2 г/кг LBM (поддержание)", () => {
     // 90 кг, 25% жира → LBM 67.5 → 108–148.5 → 108..149 (округл.)
     const t = computeTargets({
       sex: "male",
@@ -109,6 +113,25 @@ describe("computeTargets — белок по сухой массе при изв
       bodyFatPct: 25,
     });
     expect(t.protein).toEqual({ min: 108, max: 149 });
+  });
+});
+
+describe("computeTargets — белок зависит от цели (kbju A8)", () => {
+  it("на сушке белок выше: 2.0–2.6 г/кг", () => {
+    // мужчина 80 кг, lose, без %жира → 80·2.0=160 ; 80·2.6=208
+    const t = computeTargets({ ...MALE_MAINTAIN, goal: "lose" });
+    expect(t.protein).toEqual({ min: 160, max: 208 });
+  });
+
+  it("на наборе белок 1.6–2.2 г/кг", () => {
+    const t = computeTargets({ ...MALE_MAINTAIN, goal: "gain" });
+    expect(t.protein).toEqual({ min: 128, max: 176 });
+  });
+
+  it("верх жиров ограничен вес·1.2, когда калорий много (набор)", () => {
+    // gain: goalKcal 3172.85 → 30%/9=105.8→106 ; вес·1.2=96 → берём 96
+    const t = computeTargets({ ...MALE_MAINTAIN, goal: "gain" });
+    expect(t.fat).toEqual({ min: 64, max: 96 });
   });
 });
 

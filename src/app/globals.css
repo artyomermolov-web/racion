@@ -411,6 +411,10 @@ main {
   color: var(--danger);
   font-weight: 500;
 }
+/* абзацы расчёта внутри свёрнутого блока — с вертикальным ритмом */
+.explain details p {
+  margin: 8px 0 0;
+}
 
 /* select под iOS-инпут */
 select.input {

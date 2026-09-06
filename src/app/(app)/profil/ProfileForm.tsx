@@ -14,6 +14,7 @@ const ACTIVITY_OPTIONS = [
   { value: "light", label: "Лёгкая — спорт 1–3 раза в неделю" },
   { value: "moderate", label: "Умеренная — спорт 3–5 раз в неделю" },
   { value: "high", label: "Высокая — спорт 6–7 раз в неделю" },
+  { value: "veryHigh", label: "Очень высокая — 2 тренировки в день" },
 ];
 
 const GOAL_OPTIONS = [

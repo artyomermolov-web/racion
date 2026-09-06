@@ -1,19 +1,27 @@
-// Расчёт персональной нормы КБЖУ (тикеты 03, 05). Чистый модуль без зависимостей
-// от Prisma/Next — основной шов тестирования (spec.md, Testing Decisions).
+// Расчёт персональной нормы КБЖУ. Чистый модуль без зависимостей от Prisma/Next —
+// основной шов тестирования (spec.md, Testing Decisions).
+// Все коэффициенты и формулы — из docs/kbju-master.md (разделы A7–A8), это
+// опорный документ проекта; при конфликте с research-заметками он первичен.
 
 export type Sex = "male" | "female";
-export type ActivityLevel = "sedentary" | "light" | "moderate" | "high";
+export type ActivityLevel =
+  | "sedentary"
+  | "light"
+  | "moderate"
+  | "high"
+  | "veryHigh";
 export type Goal = "lose" | "maintain" | "gain";
 
-/** Множители активности (PAL → TDEE), research/nutrition-norms.md §2. */
+/** Множители активности (PAL → TDEE), kbju-master.md A7. */
 export const ACTIVITY_MULTIPLIER: Record<ActivityLevel, number> = {
   sedentary: 1.2,
   light: 1.375,
   moderate: 1.55,
   high: 1.725,
+  veryHigh: 1.9,
 };
 
-/** Корректировка калорий под цель, research/nutrition-norms.md §3. */
+/** Корректировка калорий под цель, kbju-master.md A7 (набор +15%, сушка −20%). */
 export const GOAL_FACTOR: Record<Goal, number> = {
   lose: 0.8,
   maintain: 1.0,
@@ -44,19 +52,27 @@ export function tdee(bmr: number, activityLevel: ActivityLevel): number {
 }
 
 /**
- * Защитные минимумы целевой калорийности (research §3): ниже них не опускаем,
- * даже на дефиците. UI показывает мягкое предупреждение (kcalFloorApplied).
+ * Защитные минимумы целевой калорийности: ниже них не опускаем даже на дефиците.
+ * UI показывает мягкое предупреждение (kcalFloorApplied).
  */
 export const KCAL_FLOOR: Record<Sex, number> = {
   female: 1200,
   male: 1500,
 };
 
-/** Доля калорий из жиров — верхняя граница диапазона (research §5). */
-const FAT_KCAL_SHARE = 0.3;
-/** Нижний порог жиров, г на кг массы тела (research §5). */
+/** Белок, г на кг (kbju-master.md A8): на сушке выше, чем на наборе/поддержании. */
+const PROTEIN_PER_KG: Record<Goal, [number, number]> = {
+  lose: [2.0, 2.6],
+  maintain: [1.6, 2.2],
+  gain: [1.6, 2.2],
+};
+
+/** Жиры, г на кг массы тела — диапазон 0.8–1.2 (kbju-master.md A8). */
 const FAT_FLOOR_PER_KG = 0.8;
-/** Клетчатка: г на 1000 ккал, затем зажимается в диапазон [25; 30] (research §5). */
+const FAT_TARGET_PER_KG = 1.2;
+/** Потолок доли калорий из жиров (kbju-master.md B3/C, ВОЗ ≤30%). */
+const FAT_KCAL_SHARE = 0.3;
+/** Клетчатка: г на 1000 ккал, затем зажимается в диапазон [25; 30] (kbju A8). */
 const FIBER_PER_1000_KCAL = 14;
 const FIBER_MIN = 25;
 const FIBER_MAX = 30;
@@ -93,10 +109,11 @@ const round10 = (x: number) => Math.round(x / 10) * 10;
 const clamp = (x: number, lo: number, hi: number) => Math.min(Math.max(x, lo), hi);
 
 /**
- * Полный расчёт персональной нормы (research §1–5):
+ * Полный расчёт персональной нормы (kbju-master.md A7–A8):
  * BMR → TDEE → цель по ккал (с защитным минимумом) → диапазон ±5% →
- * белок (по LBM при известном %жира, иначе по массе) → жир (порог + ~30%) →
- * углеводы (остаток) → клетчатка (минимум).
+ * белок (по цели; база — сухая масса при известном %жира, иначе общая масса) →
+ * жир (0.8–1.2 г/кг с потолком 30% калорий) → углеводы (остаток) →
+ * клетчатка (минимум).
  */
 export function computeTargets(input: BodyInput): NutritionTargets {
   const bmr = mifflinBmr(input);
@@ -112,23 +129,27 @@ export function computeTargets(input: BodyInput): NutritionTargets {
     max: round10(goalKcal * 1.05),
   };
 
-  // Белок.
+  // Белок: диапазон г/кг зависит от цели (сушка выше). База — сухая масса при
+  // известном %жира (точнее для людей с высоким %жира), иначе общая масса.
   const hasBodyFat =
     input.bodyFatPct != null && input.bodyFatPct > 0 && input.bodyFatPct < 100;
   const proteinBase = hasBodyFat
     ? input.weightKg * (1 - (input.bodyFatPct as number) / 100)
     : input.weightKg;
-  const [proteinLo, proteinHi] = hasBodyFat ? [1.6, 2.2] : [1.6, 2.0];
+  const [proteinLo, proteinHi] = PROTEIN_PER_KG[input.goal];
   const protein: Range = {
     min: Math.round(proteinBase * proteinLo),
     max: Math.round(proteinBase * proteinHi),
   };
 
-  // Жиры: нижний порог по массе, верх — доля калорийности; верх не ниже порога.
+  // Жиры: диапазон 0.8–1.2 г/кг, но верх не выше 30% калорийности и не ниже низа.
   const fatMin = Math.round(input.weightKg * FAT_FLOOR_PER_KG);
   const fatMax = Math.max(
     fatMin,
-    Math.round((goalKcal * FAT_KCAL_SHARE) / 9),
+    Math.min(
+      Math.round(input.weightKg * FAT_TARGET_PER_KG),
+      Math.round((goalKcal * FAT_KCAL_SHARE) / 9),
+    ),
   );
   const fat: Range = { min: fatMin, max: fatMax };
 

@@ -21,6 +21,7 @@ const ACTIVITY_LEVELS: readonly ActivityLevel[] = [
   "light",
   "moderate",
   "high",
+  "veryHigh",
 ];
 const GOALS: readonly Goal[] = ["lose", "maintain", "gain"];
 const SEXES: readonly Sex[] = ["male", "female"];
