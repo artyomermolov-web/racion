@@ -62,14 +62,27 @@ export function DayPlan({ initial }: { initial: DisplayDay }) {
     <div className={pending ? "day is-busy" : "day"}>
       <div className="g-title">План на сегодня</div>
 
-      {/* Сводка дня: калории + кольца Б/Ж/У против цели. */}
-      <div className="group day-summary">
-        <div className="day-kcal">
-          <div className="day-kcal-now num">{fmt(day.totals.kcal)}</div>
-          <div className="day-kcal-of num">из {fmt(day.target.kcal)} ккал</div>
-          <div className="day-kcal-delta">{deltaLabel}</div>
+      {/* Сводка дня: калории + кольца Б/Ж/У против цели + клетчатка (минимум). */}
+      <div className="group">
+        <div className="day-summary">
+          <div className="day-kcal">
+            <div className="day-kcal-now num">{fmt(day.totals.kcal)}</div>
+            <div className="day-kcal-of num">из {fmt(day.target.kcal)} ккал</div>
+            <div className="day-kcal-delta">{deltaLabel}</div>
+          </div>
+          <MacroRings totals={day.totals} target={day.target} />
         </div>
-        <MacroRings totals={day.totals} target={day.target} />
+        <div className="day-fiber">
+          <span className="ring-dot" style={{ background: "var(--fb)" }} />
+          <span className="ring-label">Клетчатка</span>
+          <span className="ring-val num">
+            {day.totals.fiber}
+            <span className="ring-target"> / от {day.target.fiber} г</span>
+            {day.totals.fiber >= day.target.fiber ? (
+              <span className="fiber-ok"> ✓</span>
+            ) : null}
+          </span>
+        </div>
       </div>
 
       {/* Приёмы пищи. */}
@@ -87,7 +100,8 @@ export function DayPlan({ initial }: { initial: DisplayDay }) {
               <div className="meal-name">{m.name}</div>
               <div className="meal-macros num">
                 <b>{fmt(m.nutrients.kcal)}</b> ккал · Б {m.nutrients.protein} · Ж{" "}
-                {m.nutrients.fat} · У {m.nutrients.carb} · {formatTime(m.timeMin)}
+                {m.nutrients.fat} · У {m.nutrients.carb} · Кл {m.nutrients.fiber} ·{" "}
+                {formatTime(m.timeMin)}
               </div>
             </div>
             <button

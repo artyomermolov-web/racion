@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { SegmentedControl } from "@/components/ios/SegmentedControl";
 import { EmptyState } from "@/components/ios/EmptyState";
-import { NormCard, type NormRanges } from "@/components/NormCard";
+import type { NormRanges } from "@/components/NormCard";
 import { DayPlan } from "@/components/DayPlan";
 import type { DisplayDay } from "@/lib/generator";
 
@@ -31,12 +31,6 @@ export function HomeContent({
         ariaLabel="Период плана"
       />
       <main>
-        {norm ? (
-          <>
-            <div className="g-title">Ваша норма на день</div>
-            <NormCard norm={norm} />
-          </>
-        ) : null}
         {segment === "today" ? (
           day ? (
             <DayPlan initial={day} />
