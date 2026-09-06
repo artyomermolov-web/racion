@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { requireUser } from "@/lib/auth";
 import { LargeTitleHeader } from "@/components/ios/LargeTitleHeader";
 import { InsetGroupedList, Row } from "@/components/ios/InsetGroupedList";
+import { RecipePreferences } from "@/components/RecipePreferences";
 import { getRecipeDetail } from "@/lib/food";
+import { getRecipePreference } from "@/lib/preferences";
 import {
   ALLERGEN_LABELS,
   DIET_LABELS,
@@ -40,10 +43,12 @@ export default async function RecipePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const user = await requireUser();
   const recipe = await getRecipeDetail(id);
   if (!recipe) notFound();
 
   const { perServing } = recipe;
+  const preference = await getRecipePreference(user.id, recipe.id);
 
   return (
     <>
@@ -56,6 +61,12 @@ export default async function RecipePage({
         }
       />
       <main>
+        {/* Действия предпочтений (тикет 16): избранное, блок, recurring. */}
+        <div className="g-title">Ваши предпочтения</div>
+        <div className="group">
+          <RecipePreferences recipeId={recipe.id} initial={preference} />
+        </div>
+
         {/* КБЖУ на порцию — считается из состава (тикет 13). */}
         <div className="g-title">КБЖУ на порцию</div>
         <div className="group">

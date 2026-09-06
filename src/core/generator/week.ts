@@ -18,6 +18,7 @@ import type {
   MealSlot,
   DayTarget,
   GeneratorConstraints,
+  Preferences,
   NutrientRanges,
   RepeatPolicy,
   PlanItem,
@@ -33,7 +34,11 @@ import {
   sumNutrients,
   zeroNutrients,
   deviation,
+  preferenceBonus,
+  isAlwaysRecurring,
+  chooseScored,
   NUTRIENT_KEYS,
+  type Scored,
 } from "./generate";
 import { mulberry32, pickIndex } from "./rng";
 
@@ -44,6 +49,9 @@ import { mulberry32, pickIndex } from "./rng";
 const W_WEEK = 10;
 const W_DAILY = 1;
 const W_REPEAT = 2;
+// Вес бонуса предпочтений в энергии недели (тикет 16): мягко удерживает избранное
+// и recurring often при отжиге, не перебивая приоритет КБЖУ (W_WEEK).
+const W_PREF = 1;
 // Штраф за повтор при жадном выборе (нудж прочь от уже исчерпанных, не отсев).
 const W_REPEAT_GREEDY = 3;
 
@@ -79,12 +87,6 @@ function minPenalty(value: number, min: number, scale: number): number {
   if (value >= min) return 0;
   const d = nd(min, value, scale);
   return d * d;
-}
-
-interface Scored {
-  recipe: GeneratorRecipe;
-  portion: number;
-  score: number;
 }
 
 /** Собирает PlanItem из кандидата и порции. */
@@ -132,6 +134,7 @@ function pickForSlot(
   usage: Map<string, number>,
   repeat: RepeatPolicy,
   rng: () => number,
+  preferences?: Preferences,
 ): Scored | null {
   if (candidates.length === 0) return null;
 
@@ -150,16 +153,15 @@ function pickForSlot(
     for (const k of NUTRIENT_KEYS) projected[k] = running[k] + contrib[k];
     const repeatCost =
       W_REPEAT_GREEDY * repeatStepCost(usage.get(recipe.id) ?? 0, recipe.id, repeat);
-    return {
-      recipe,
-      portion,
-      score: deviation(projected, cumTarget, target) + repeatCost,
-    };
+    const score =
+      deviation(projected, cumTarget, target) +
+      repeatCost -
+      preferenceBonus(recipe.id, preferences);
+    return { recipe, portion, score };
   });
 
-  scored.sort((a, b) => a.score - b.score || (a.recipe.id < b.recipe.id ? -1 : 1));
-  const pool = scored.slice(0, Math.min(POOL_SIZE, scored.length));
-  return pool[pickIndex(rng, pool.length)];
+  // Гарантия always-recurring + «корзина выбора» по seed — общая логика ядра.
+  return chooseScored(scored, preferences, rng, POOL_SIZE);
 }
 
 /**
@@ -174,13 +176,14 @@ function greedyDay(
   usage: Map<string, number>,
   repeat: RepeatPolicy,
   rng: () => number,
+  preferences?: Preferences,
 ): PlanItem[] {
   const items: PlanItem[] = [];
   const usedToday = new Set<string>();
   let cumShare = 0;
   for (const slot of slots) {
     cumShare += slot.kcalShare;
-    const candidates = filterCandidates(recipes, slot, constraints).filter(
+    const candidates = filterCandidates(recipes, slot, constraints, preferences).filter(
       (r) => !usedToday.has(r.id),
     );
     const chosen = pickForSlot(
@@ -192,6 +195,7 @@ function greedyDay(
       usage,
       repeat,
       rng,
+      preferences,
     );
     if (!chosen) continue;
     usedToday.add(chosen.recipe.id);
@@ -249,13 +253,29 @@ function weekRangeEnergy(
   );
 }
 
-/** Полная энергия недели: диапазоны (×W_WEEK) + дни (×W_DAILY) + повторы (×W_REPEAT). */
+/**
+ * Бонус-энергия предпочтений (тикет 16): сумма бонусов размещённых избранных /
+ * recurring often, со знаком минус (наличие предпочтённого снижает энергию). SA
+ * мягко удерживает вкусы, не перебивая КБЖУ. always-recurring сюда не входит —
+ * его присутствие уже гарантировано жадным forced-выбором и защитой ходов.
+ */
+function preferenceEnergy(days: PlanItem[][], preferences?: Preferences): number {
+  if (!preferences) return 0;
+  let bonus = 0;
+  for (const day of days) {
+    for (const it of day) bonus += preferenceBonus(it.recipeId, preferences);
+  }
+  return -bonus;
+}
+
+/** Полная энергия недели: диапазоны + дни + повторы + предпочтения. */
 function totalEnergy(
   days: PlanItem[][],
   ranges: NutrientRanges,
   dayTarget: DayTarget,
   repeat: RepeatPolicy,
   nDays: number,
+  preferences?: Preferences,
 ): number {
   const mean = weeklyMean(days, nDays);
   let dayE = 0;
@@ -263,7 +283,8 @@ function totalEnergy(
   return (
     W_WEEK * weekRangeEnergy(mean, ranges, dayTarget) +
     W_DAILY * dayE +
-    W_REPEAT * repeatEnergy(days, repeat)
+    W_REPEAT * repeatEnergy(days, repeat) +
+    W_PREF * preferenceEnergy(days, preferences)
   );
 }
 
@@ -294,6 +315,7 @@ function proposeMove(
   dayTarget: DayTarget,
   rng: () => number,
   fixedDay?: number,
+  preferences?: Preferences,
 ): Move | null {
   const kind = rng();
   const dIdx = fixedDay ?? pickIndex(rng, days.length);
@@ -303,6 +325,9 @@ function proposeMove(
   const item = day[sIdx];
   const mealSlot = slots.find((s) => s.slot === item.slot);
   if (!mealSlot) return null;
+  // always-recurring обязателен: его нельзя вытеснить из плана. Смену порции
+  // разрешаем (блюдо остаётся), а замену/обмен — нет.
+  const itemForced = isAlwaysRecurring(item.recipeId, preferences);
 
   // 1/3 — смена порции.
   if (kind < 0.34) {
@@ -330,6 +355,8 @@ function proposeMove(
     const a = day[sIdx];
     const b = other[oSlot];
     if (a.recipeId === b.recipeId) return null;
+    // Не переносим always-recurring между днями (в дне-доноре он обязан остаться).
+    if (itemForced || isAlwaysRecurring(b.recipeId, preferences)) return null;
     // Инвариант дня: не создаём дубль внутри дня после обмена.
     if (day.some((it, i) => i !== sIdx && it.recipeId === b.recipeId)) return null;
     if (other.some((it, i) => i !== oSlot && it.recipeId === a.recipeId)) return null;
@@ -343,8 +370,10 @@ function proposeMove(
     };
   }
 
-  // 3/3 — замена блюда в слоте другим кандидатом.
-  const candidates = filterCandidates(recipes, mealSlot, constraints).filter(
+  // 3/3 — замена блюда в слоте другим кандидатом. always-recurring не заменяем —
+  // он обязан присутствовать (тикет 16).
+  if (itemForced) return null;
+  const candidates = filterCandidates(recipes, mealSlot, constraints, preferences).filter(
     (r) => r.id !== item.recipeId && !day.some((it, i) => i !== sIdx && it.recipeId === r.id),
   );
   if (candidates.length === 0) return null;
@@ -375,7 +404,7 @@ function anneal(
   const T0 = 1.0;
   const Tend = 0.01;
 
-  let energy = totalEnergy(days, input.ranges, input.dayTarget, repeat, nDays);
+  let energy = totalEnergy(days, input.ranges, input.dayTarget, repeat, nDays, input.preferences);
   for (let i = 0; i < maxIters; i++) {
     const T = T0 * Math.pow(Tend / T0, i / maxIters);
     const move = proposeMove(
@@ -386,9 +415,10 @@ function anneal(
       input.dayTarget,
       rng,
       opts.fixedDay,
+      input.preferences,
     );
     if (!move) continue;
-    const next = totalEnergy(days, input.ranges, input.dayTarget, repeat, nDays);
+    const next = totalEnergy(days, input.ranges, input.dayTarget, repeat, nDays, input.preferences);
     const dE = next - energy;
     if (dE <= 0 || rng() < Math.exp(-dE / T)) {
       energy = next; // принять
@@ -433,11 +463,21 @@ function toGeneratedDay(items: PlanItem[], target: DayTarget): GeneratedDay {
   return { items, totals: sumNutrients(items), target };
 }
 
-/** Политика повторов из входа с дефолтами. */
+/**
+ * Политика повторов из входа с дефолтами. always-recurring (тикет 16) освобождён
+ * от штрафа за повтор — он и так стоит каждый день; объединяем его id с явным
+ * списком из repeat, чтобы источник исключений был один.
+ */
 function repeatPolicy(input: GenerateWeekInput): RepeatPolicy {
+  const always = [
+    ...new Set([
+      ...(input.repeat?.alwaysRecurringIds ?? []),
+      ...(input.preferences?.recurringAlwaysIds ?? []),
+    ]),
+  ];
   return {
     maxPerWindow: input.repeat?.maxPerWindow ?? DEFAULT_MAX_PER_WINDOW,
-    alwaysRecurringIds: input.repeat?.alwaysRecurringIds,
+    alwaysRecurringIds: always.length > 0 ? always : undefined,
     leftoverIds: input.repeat?.leftoverIds,
   };
 }
@@ -464,6 +504,7 @@ export function generateWeek(input: GenerateWeekInput): GeneratedWeek {
         usage,
         repeat,
         rng,
+        input.preferences,
       ),
     );
   }
@@ -529,6 +570,7 @@ export function regenerateDay(input: RegenerateDayInput): GeneratedWeek {
     usage,
     repeat,
     rng,
+    input.preferences,
   );
 
   // Собираем неделю с новым днём и дожимаем ТОЛЬКО этот день отжигом при
@@ -578,9 +620,12 @@ export function replaceMealInWeek(input: ReplaceMealInWeekInput): GeneratedWeek 
   const usedInDay = new Set(others.map((it) => it.recipeId));
   const currentId = day.find((it) => it.slot === input.slot)?.recipeId;
 
-  const candidates = filterCandidates(input.recipes, mealSlot, input.constraints).filter(
-    (r) => r.id !== currentId && !usedInDay.has(r.id),
-  );
+  const candidates = filterCandidates(
+    input.recipes,
+    mealSlot,
+    input.constraints,
+    input.preferences,
+  ).filter((r) => r.id !== currentId && !usedInDay.has(r.id));
   if (candidates.length === 0) return null;
 
   // Остаток дневной цели после прочих приёмов дня (не ниже нуля).
@@ -595,7 +640,17 @@ export function replaceMealInWeek(input: ReplaceMealInWeekInput): GeneratedWeek 
 
   // Повторы относительно прочих дней (не считаем текущий день).
   const usage = countUsage(input.current.filter((_, i) => i !== input.dayIndex));
-  const chosen = pickForSlot(candidates, zeroNutrients(), 1, 1, remaining, usage, repeat, rng);
+  const chosen = pickForSlot(
+    candidates,
+    zeroNutrients(),
+    1,
+    1,
+    remaining,
+    usage,
+    repeat,
+    rng,
+    input.preferences,
+  );
   if (!chosen) return null;
 
   const newItem = toItem(input.slot, chosen);

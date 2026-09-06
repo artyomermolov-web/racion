@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getProfileData, targetsToRecord } from "@/lib/profile";
 import { logoutAction } from "@/app/actions/auth";
@@ -117,6 +118,14 @@ export default async function ProfilPage() {
             ) : null}
           </>
         ) : null}
+
+        <div className="g-title">Предпочтения</div>
+        <div className="group">
+          <Link href="/profil/vkusy" className="row">
+            <div className="grow">Вкусы и фильтры</div>
+            <span className="chev">›</span>
+          </Link>
+        </div>
 
         <div className="g-title">
           {profile ? "Ваши данные" : "Рассчитать норму"}

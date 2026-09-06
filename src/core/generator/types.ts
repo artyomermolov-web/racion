@@ -59,6 +59,12 @@ export interface MealSlot {
   canCook: boolean;
   /** Доступная техника для приёма (жёсткое ограничение). */
   availableEquipment: Equipment[];
+  /**
+   * Режим «только recurring» (тикет 16, decision 06: MealType.onlyRecurring). Если
+   * true — в приём попадают лишь блюда, отмеченные пользователем как recurring
+   * (often/always); прочие кандидаты жёстко отсекаются. По умолчанию false.
+   */
+  onlyRecurring?: boolean;
 }
 
 /** Целевые КБЖУ на день (точки, а не диапазоны — берём середины нормы). */
@@ -68,6 +74,25 @@ export interface DayTarget {
   fat: number;
   carb: number;
   fiber: number;
+}
+
+/**
+ * Мягкие предпочтения по вкусам (тикет 16, decision 06 шаг 4 «бонусы»). В отличие
+ * от жёстких GeneratorConstraints (нарушать нельзя) — это скоринговые бонусы и
+ * near-hard-гарантия присутствия для always-recurring:
+ *  • favorite → бонус к скорингу (блюдо предлагается чаще);
+ *  • recurring often → больший бонус (попадает регулярно);
+ *  • recurring always → блюдо гарантированно ставится в свой слот (обязательно) и
+ *    освобождено от штрафа за повтор.
+ * Блок и keyword-фильтр — это жёсткие ограничения, они живут в GeneratorConstraints.
+ */
+export interface Preferences {
+  /** Избранные рецепты — бонус к скорингу. */
+  favoriteIds?: string[];
+  /** Recurring often — больший бонус (регулярно). */
+  recurringOftenIds?: string[];
+  /** Recurring always — гарантированное присутствие + освобождение от анти-повторов. */
+  recurringAlwaysIds?: string[];
 }
 
 /** Жёсткие персональные ограничения (аллергены/стоп-лист). */
@@ -106,6 +131,8 @@ export interface GenerateDayInput {
   slots: MealSlot[];
   target: DayTarget;
   constraints: GeneratorConstraints;
+  /** Мягкие предпочтения (избранное/recurring). Необязательно. */
+  preferences?: Preferences;
   /** Seed детерминирует выбор среди близких кандидатов (для тестов и стабильности). */
   seed: number;
 }
@@ -157,6 +184,8 @@ export interface GenerateWeekInput {
   /** Точечная дневная цель (середины нормы) — мягкая тяга дня к балансу. */
   dayTarget: DayTarget;
   constraints: GeneratorConstraints;
+  /** Мягкие предпочтения (избранное/recurring). Необязательно. */
+  preferences?: Preferences;
   repeat?: RepeatPolicy;
   seed: number;
   /** Число итераций отжига (детерминировано). По умолчанию задаётся модулем. */

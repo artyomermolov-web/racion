@@ -923,8 +923,169 @@ select.input {
   gap: 8px;
 }
 
+/* ---------- вкусы и предпочтения (тикет 16) ---------- */
+
+/* Пояснение под группой (мельче g-title, не uppercase). */
+.g-note {
+  padding: 6px 16px 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--label2);
+}
+
+/* Действия предпочтений на карточке блюда. */
+.prefs {
+  padding: 12px;
+}
+.prefs.is-busy {
+  opacity: 0.6;
+}
+.prefs-row {
+  display: flex;
+  gap: 8px;
+}
+.pref-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  background: var(--fill);
+  color: var(--label);
+  font-size: 15px;
+  font-weight: 600;
+  padding: 12px 8px;
+  border-radius: 11px;
+  cursor: pointer;
+}
+.pref-btn:disabled {
+  cursor: default;
+}
+.pref-btn.on.fav {
+  background: color-mix(in srgb, var(--f) 18%, transparent);
+  color: var(--f);
+}
+.pref-btn.on.block {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger);
+}
+.prefs-recurring {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+.prefs-label {
+  font-size: 15px;
+  color: var(--label);
+}
+.prefs-recurring .seg {
+  flex: 1;
+}
+.prefs-hint {
+  margin: 10px 2px 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--label2);
+}
+
+/* Экран фильтров «не хочу есть». */
+.kwf {
+  padding: 12px;
+}
+.kwf-add {
+  display: flex;
+  gap: 8px;
+}
+.kwf-add .input {
+  flex: 1;
+}
+.kwf-add-btn {
+  width: auto;
+  margin: 0;
+  padding: 0 16px;
+  white-space: nowrap;
+}
+.kwf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.chip.removable {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+.chip.add {
+  background: var(--fill);
+  color: var(--label);
+}
+.chip:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.kwf-sub {
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--label2);
+}
+.kwf-empty {
+  margin: 12px 2px 0;
+  font-size: 13px;
+  color: var(--label2);
+}
+
+/* iOS-переключатель (switch). */
+.switch {
+  position: relative;
+  width: 51px;
+  height: 31px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fill);
+  cursor: pointer;
+  transition: background 0.2s ease;
+  flex: none;
+}
+.switch.on {
+  background: var(--good);
+}
+.switch:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s ease;
+}
+.switch.on .switch-knob {
+  transform: translateX(20px);
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation: none !important;
+  }
+  .switch,
+  .switch-knob {
+    transition: none;
   }
 }

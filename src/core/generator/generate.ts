@@ -20,6 +20,7 @@ import type {
   MealSlot,
   DayTarget,
   GeneratorConstraints,
+  Preferences,
   PlanItem,
   GeneratedDay,
   GenerateDayInput,
@@ -42,6 +43,9 @@ const ALL_EQUIPMENT: Equipment[] = [
  * MealType/DaySetting в схеме пока нет — задаём кодом. Доли ккал в сумме = 1;
  * время готовки — потолок для жёсткого ограничения по времени.
  */
+/** Слоты дня в каноническом порядке — единый источник для UI и валидации. */
+export const ALL_SLOTS: Slot[] = ["breakfast", "lunch", "dinner", "snack"];
+
 export const DEFAULT_DAY_LAYOUT: MealSlot[] = [
   { slot: "breakfast", kcalShare: 0.25, cookTimeMin: 25, canCook: true, availableEquipment: ALL_EQUIPMENT },
   { slot: "lunch", kcalShare: 0.35, cookTimeMin: 90, canCook: true, availableEquipment: ALL_EQUIPMENT },
@@ -61,6 +65,14 @@ const W_CARB = 0.4;
 // чтобы «перегенерировать» давало разнообразие; малое число — чтобы держаться
 // близко к оптимуму по КБЖУ.
 const POOL_SIZE = 3;
+
+// Бонусы предпочтений (тикет 16, decision 06 шаг 4: favorite < recurringOften).
+// Вычитаются из скоринга (меньше = лучше), поэтому предпочтённое блюдо чаще
+// попадает в «корзину выбора» и берётся. Масштаб сопоставим с нормированным
+// дневным отклонением (обычно доли единицы): нудж к вкусам, но КБЖУ важнее —
+// явный проигрыш по нутриентам бонус не перебивает.
+const FAVORITE_BONUS = 0.15;
+const RECURRING_OFTEN_BONUS = 0.3;
 
 export const NUTRIENT_KEYS: (keyof FoodNutrients)[] = [
   "kcal",
@@ -126,10 +138,51 @@ export function deviation(
   );
 }
 
-interface Scored {
+/** Кандидат с посчитанной порцией и скорингом (общий для дневного/недельного слоёв). */
+export interface Scored {
   recipe: GeneratorRecipe;
   portion: number;
   score: number;
+}
+
+/**
+ * Выбор из отранжированных кандидатов с гарантией always-recurring (тикет 16):
+ * если среди кандидатов есть always-recurring — берём строго лучшего из них
+ * (присутствие не зависит от seed); иначе seed выбирает одного из `poolSize`
+ * лучших (разнообразие). Ожидает непустой `scored` (вызывающий отсеивает пустой
+ * пул). Общий для generate.ts/week.ts — правило присутствия живёт в одном месте.
+ */
+export function chooseScored(
+  scored: Scored[],
+  preferences: Preferences | undefined,
+  rng: () => number,
+  poolSize: number,
+): Scored {
+  const forced = scored.filter((s) => isAlwaysRecurring(s.recipe.id, preferences));
+  const ranked = forced.length > 0 ? forced : scored;
+  // Стабильная сортировка по скорингу, затем по id — детерминизм при равенстве.
+  ranked.sort((a, b) => a.score - b.score || (a.recipe.id < b.recipe.id ? -1 : 1));
+  if (forced.length > 0) return ranked[0];
+  const pool = ranked.slice(0, Math.min(poolSize, ranked.length));
+  return pool[pickIndex(rng, pool.length)];
+}
+
+/**
+ * Бонус предпочтения для рецепта (тикет 16): вычитается из скоринга. Recurring
+ * often — сильнее избранного; recurring always здесь НЕ учитывается бонусом —
+ * его присутствие гарантируется отдельно (forced-выбор), а не мягким нуджем.
+ * Экспортируется — недельный слой (week.ts) применяет ту же величину.
+ */
+export function preferenceBonus(id: string, preferences?: Preferences): number {
+  if (!preferences) return 0;
+  if (preferences.recurringOftenIds?.includes(id)) return RECURRING_OFTEN_BONUS;
+  if (preferences.favoriteIds?.includes(id)) return FAVORITE_BONUS;
+  return 0;
+}
+
+/** Рецепт помечен recurring always? (гарантия присутствия, а не бонус). */
+export function isAlwaysRecurring(id: string, preferences?: Preferences): boolean {
+  return preferences?.recurringAlwaysIds?.includes(id) ?? false;
 }
 
 /**
@@ -145,6 +198,7 @@ function pickForSlot(
   cumShare: number,
   target: DayTarget,
   rng: () => number,
+  preferences?: Preferences,
 ): Scored | null {
   if (candidates.length === 0) return null;
 
@@ -161,14 +215,12 @@ function pickForSlot(
     const contrib = scalePortion(recipe.perServing, portion);
     const projected = zeroNutrients();
     for (const k of NUTRIENT_KEYS) projected[k] = running[k] + contrib[k];
-    return { recipe, portion, score: deviation(projected, cumTarget, target) };
+    const score =
+      deviation(projected, cumTarget, target) - preferenceBonus(recipe.id, preferences);
+    return { recipe, portion, score };
   });
 
-  // Стабильная сортировка по скорингу, затем по id — детерминизм при равенстве.
-  scored.sort((a, b) => a.score - b.score || (a.recipe.id < b.recipe.id ? -1 : 1));
-
-  const pool = scored.slice(0, Math.min(POOL_SIZE, scored.length));
-  return pool[pickIndex(rng, pool.length)];
+  return chooseScored(scored, preferences, rng, POOL_SIZE);
 }
 
 /** Собирает PlanItem из выбранного кандидата и порции. */
@@ -187,7 +239,7 @@ function toItem(slot: MealSlot, chosen: Scored): PlanItem {
  * внутри дня. Детерминировано при фиксированном seed.
  */
 export function generateDay(input: GenerateDayInput): GeneratedDay {
-  const { recipes, slots, target, constraints, seed } = input;
+  const { recipes, slots, target, constraints, preferences, seed } = input;
   const rng = mulberry32(seed);
 
   const items: PlanItem[] = [];
@@ -196,7 +248,7 @@ export function generateDay(input: GenerateDayInput): GeneratedDay {
 
   for (const slot of slots) {
     cumShare += slot.kcalShare;
-    const candidates = filterCandidates(recipes, slot, constraints).filter(
+    const candidates = filterCandidates(recipes, slot, constraints, preferences).filter(
       (r) => !used.has(r.id),
     );
     const chosen = pickForSlot(
@@ -206,6 +258,7 @@ export function generateDay(input: GenerateDayInput): GeneratedDay {
       cumShare,
       target,
       rng,
+      preferences,
     );
     if (!chosen) continue; // нет кандидатов на слот — пропускаем (редко на сид-базе)
     used.add(chosen.recipe.id);
@@ -230,7 +283,7 @@ export interface ReplaceDishInput extends GenerateDayInput {
  * дырам в дне (слот без кандидатов). Детерминировано при фиксированном seed.
  */
 export function replaceDish(input: ReplaceDishInput): PlanItem | null {
-  const { recipes, slots, target, constraints, seed, current, slot } = input;
+  const { recipes, slots, target, constraints, preferences, seed, current, slot } = input;
   const mealSlot = slots.find((s) => s.slot === slot);
   if (!mealSlot) return null;
   const rng = mulberry32(seed);
@@ -239,7 +292,7 @@ export function replaceDish(input: ReplaceDishInput): PlanItem | null {
   const usedElsewhere = new Set(others.map((it) => it.recipeId));
   const currentId = current.find((it) => it.slot === slot)?.recipeId;
 
-  const candidates = filterCandidates(recipes, mealSlot, constraints).filter(
+  const candidates = filterCandidates(recipes, mealSlot, constraints, preferences).filter(
     (r) => r.id !== currentId && !usedElsewhere.has(r.id),
   );
   if (candidates.length === 0) return null;
@@ -255,7 +308,7 @@ export function replaceDish(input: ReplaceDishInput): PlanItem | null {
   };
 
   // Цель слота — весь остаток (доля = 1): кумулятивная цель совпадает со слотовой.
-  const chosen = pickForSlot(candidates, zeroNutrients(), 1, 1, remaining, rng);
+  const chosen = pickForSlot(candidates, zeroNutrients(), 1, 1, remaining, rng, preferences);
   if (!chosen) return null;
   return toItem(mealSlot, chosen);
 }

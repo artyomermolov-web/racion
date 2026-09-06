@@ -28,6 +28,11 @@ model User {
   sessions           Session[]
   profile            UserProfile?
   nutritionProfiles  NutritionProfile[]
+  favorites          FavoriteRecipe[]
+  blocks             BlockedRecipe[]
+  recurring          RecurringRecipe[]
+  keywordFilters     KeywordFilter[]
+  mealSlotSettings   MealSlotSetting[]
 }
 
 // Физданные пользователя (1:1 к User). Основа для расчёта нормы (тикеты 04, 12).
@@ -205,6 +210,87 @@ model RecipeEquipment {
   recipe Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
 
   @@unique([recipeId, equipment])
+}
+
+// --- Вкусы и предпочтения (тикет 16, модель тикета 04) ---
+// Мягкие предпочтения по блюдам: избранное (бонус), блок (жёсткий стоп-лист),
+// recurring (often/always) и keyword-фильтры «не хочу есть». Ядро /core/generator
+// уже умеет их принимать (Preferences/GeneratorConstraints); здесь — их хранение.
+// recipeId ссылается на Recipe без внешнего ключа-каскада к рецепту: базовые
+// рецепты общие, а предпочтения привязаны к пользователю (каскад по User).
+
+// Избранный рецепт пользователя (скоринговый бонус).
+model FavoriteRecipe {
+  id       String @id @default(cuid())
+  userId   String
+  recipeId String
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, recipeId])
+  @@index([userId])
+}
+
+// Заблокированный рецепт (жёсткий стоп-лист: никогда не попадёт в план).
+model BlockedRecipe {
+  id       String @id @default(cuid())
+  userId   String
+  recipeId String
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, recipeId])
+  @@index([userId])
+}
+
+// Recurring-рецепт: often (регулярно, больший бонус) или always (обязательно
+// присутствует, освобождён от анти-повторов).
+model RecurringRecipe {
+  id        String @id @default(cuid())
+  userId    String
+  recipeId  String
+  frequency String // "often" | "always"
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, recipeId])
+  @@index([userId])
+}
+
+// Keyword-фильтр «не хочу есть»: один термин на строку. Разворачивание синонимов
+// («курица» → грудка/бедро/…) — на слое данных (/core/generator/keywords).
+model KeywordFilter {
+  id     String @id @default(cuid())
+  userId String
+  term   String
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, term])
+  @@index([userId])
+}
+
+// Настройка приёма: режим «только recurring» (decision 06: MealType.onlyRecurring).
+// Хранится по слоту (breakfast|lunch|dinner|snack) «тонкого» слоя, пока модели
+// MealType/DaySetting нет в схеме. Строка есть только для настроенных слотов.
+model MealSlotSetting {
+  id            String  @id @default(cuid())
+  userId        String
+  slot          String // "breakfast" | "lunch" | "dinner" | "snack"
+  onlyRecurring Boolean @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, slot])
+  @@index([userId])
 }
 
 model Session {

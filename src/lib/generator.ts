@@ -12,15 +12,20 @@ import {
   regenerateDay,
   replaceMealInWeek,
   scalePortion,
+  recipeKeywords,
   DEFAULT_DAY_LAYOUT,
   type GeneratorRecipe,
   type DayTarget,
+  type MealSlot,
   type NutrientRanges,
+  type GeneratorConstraints,
+  type Preferences,
   type PlanItem,
   type GeneratedWeek,
   type Slot,
   type Allergen,
 } from "@/core/generator";
+import { loadPreferences, type LoadedPreferences } from "@/lib/preferences";
 
 /** Приём дня, готовый к показу: КБЖУ + название и время рецепта. */
 export interface DayMeal {
@@ -151,6 +156,14 @@ async function loadRecipePool(): Promise<RecipePool> {
       ),
     ] as Allergen[];
 
+    // Ключевые слова для keyword-фильтра (тикет 16): название + названия
+    // ингредиентов + группы продуктов. Синонимы разворачиваются на входе фильтра.
+    const keywords = recipeKeywords(
+      r.name,
+      r.ingredients.map((ri) => ri.ingredient.name),
+      r.ingredients.map((ri) => ri.ingredient.group),
+    );
+
     const gr: GeneratorRecipe = {
       id: r.id,
       slots: r.slots.map((s) => s.slot) as Slot[],
@@ -158,6 +171,7 @@ async function loadRecipePool(): Promise<RecipePool> {
       equipment: r.equipment.map((e) => e.equipment) as GeneratorRecipe["equipment"],
       allergens,
       perServing,
+      keywords,
     };
     recipes.push(gr);
     byId.set(r.id, gr);
@@ -181,12 +195,32 @@ function toDayMeal(item: PlanItem, meta: Map<string, RecipeMeta>): DayMeal {
 }
 
 /**
- * Аллергены пользователя, которые генератор обязан исключать. В «тонком» слое
- * персональных предпочтений ещё нет в схеме (тикет 16) — пока пусто. Ядро уже
- * умеет их отсекать и покрыто тестами «на утечки»; проводка UI появится позже.
+ * Аллергены пользователя, которые генератор обязан исключать. Персональных
+ * аллергенов ещё нет в схеме (свой тикет) — пока пусто. Ядро уже умеет их
+ * отсекать и покрыто тестами «на утечки».
  */
 function excludedAllergensFor(_userId: string): Allergen[] {
   return [];
+}
+
+/** Жёсткие ограничения генератора из аллергенов + предпочтений (блок/keyword). */
+function constraintsFrom(
+  userId: string,
+  prefs: LoadedPreferences,
+): GeneratorConstraints {
+  return {
+    excludedAllergens: excludedAllergensFor(userId),
+    blockedRecipeIds: prefs.blockedRecipeIds,
+    keywordFilter: prefs.keywordFilter,
+  };
+}
+
+/** Раскладка дня с режимом «только recurring» для настроенных слотов (тикет 16). */
+function layoutFor(onlyRecurringSlots: Set<Slot>): MealSlot[] {
+  if (onlyRecurringSlots.size === 0) return DEFAULT_DAY_LAYOUT;
+  return DEFAULT_DAY_LAYOUT.map((s) =>
+    onlyRecurringSlots.has(s.slot) ? { ...s, onlyRecurring: true } : s,
+  );
 }
 
 /** Собирает день под норму пользователя. null — если норма ещё не рассчитана. */
@@ -197,14 +231,18 @@ export async function buildDay(
   const norm = await activeNorm(userId);
   if (!norm) return null;
 
-  const { recipes, meta } = await loadRecipePool();
+  const [{ recipes, meta }, prefs] = await Promise.all([
+    loadRecipePool(),
+    loadPreferences(userId),
+  ]);
   const target = dayTargetFromNorm(norm);
 
   const day = generateDay({
     recipes,
-    slots: DEFAULT_DAY_LAYOUT,
+    slots: layoutFor(prefs.onlyRecurringSlots),
     target,
-    constraints: { excludedAllergens: excludedAllergensFor(userId) },
+    constraints: constraintsFrom(userId, prefs),
+    preferences: prefs.preferences,
     seed,
   });
 
@@ -229,7 +267,10 @@ export async function replaceMeal(
   const norm = await activeNorm(userId);
   if (!norm) return null;
 
-  const { recipes, meta, byId } = await loadRecipePool();
+  const [{ recipes, meta, byId }, prefs] = await Promise.all([
+    loadRecipePool(),
+    loadPreferences(userId),
+  ]);
   const target = dayTargetFromNorm(norm);
 
   // Восстанавливаем PlanItem'ы с КБЖУ из пула (не с клиента); неизвестные id
@@ -238,9 +279,10 @@ export async function replaceMeal(
 
   const replaced = replaceDish({
     recipes,
-    slots: DEFAULT_DAY_LAYOUT,
+    slots: layoutFor(prefs.onlyRecurringSlots),
     target,
-    constraints: { excludedAllergens: excludedAllergensFor(userId) },
+    constraints: constraintsFrom(userId, prefs),
+    preferences: prefs.preferences,
     seed,
     current: items,
     slot,
@@ -306,16 +348,20 @@ export async function buildWeek(
   const norm = await activeNorm(userId);
   if (!norm) return null;
 
-  const { recipes, meta } = await loadRecipePool();
+  const [{ recipes, meta }, prefs] = await Promise.all([
+    loadRecipePool(),
+    loadPreferences(userId),
+  ]);
   const dayTarget = dayTargetFromNorm(norm);
 
   const week = generateWeek({
     recipes,
-    slots: DEFAULT_DAY_LAYOUT,
+    slots: layoutFor(prefs.onlyRecurringSlots),
     days: WEEK_DAYS,
     ranges: nutrientRangesFromNorm(norm),
     dayTarget,
-    constraints: { excludedAllergens: excludedAllergensFor(userId) },
+    constraints: constraintsFrom(userId, prefs),
+    preferences: prefs.preferences,
     seed,
   });
 
@@ -336,17 +382,21 @@ export async function regenerateWeekDay(
   const norm = await activeNorm(userId);
   if (!norm) return null;
 
-  const { recipes, meta, byId } = await loadRecipePool();
+  const [{ recipes, meta, byId }, prefs] = await Promise.all([
+    loadRecipePool(),
+    loadPreferences(userId),
+  ]);
   const dayTarget = dayTargetFromNorm(norm);
   const days = current.map((refs) => rebuildItems(refs, byId));
 
   const week = regenerateDay({
     recipes,
-    slots: DEFAULT_DAY_LAYOUT,
+    slots: layoutFor(prefs.onlyRecurringSlots),
     days: WEEK_DAYS,
     ranges: nutrientRangesFromNorm(norm),
     dayTarget,
-    constraints: { excludedAllergens: excludedAllergensFor(userId) },
+    constraints: constraintsFrom(userId, prefs),
+    preferences: prefs.preferences,
     seed,
     current: days,
     dayIndex,
@@ -369,17 +419,21 @@ export async function replaceWeekMeal(
   const norm = await activeNorm(userId);
   if (!norm) return null;
 
-  const { recipes, meta, byId } = await loadRecipePool();
+  const [{ recipes, meta, byId }, prefs] = await Promise.all([
+    loadRecipePool(),
+    loadPreferences(userId),
+  ]);
   const dayTarget = dayTargetFromNorm(norm);
   const days = current.map((refs) => rebuildItems(refs, byId));
 
   const week = replaceMealInWeek({
     recipes,
-    slots: DEFAULT_DAY_LAYOUT,
+    slots: layoutFor(prefs.onlyRecurringSlots),
     days: WEEK_DAYS,
     ranges: nutrientRangesFromNorm(norm),
     dayTarget,
-    constraints: { excludedAllergens: excludedAllergensFor(userId) },
+    constraints: constraintsFrom(userId, prefs),
+    preferences: prefs.preferences,
     seed,
     current: days,
     dayIndex,
