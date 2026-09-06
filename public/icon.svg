@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0a84ff"/>
+      <stop offset="1" stop-color="#0060df"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <!-- «тарелка» -->
+  <circle cx="256" cy="256" r="150" fill="#ffffff"/>
+  <circle cx="256" cy="256" r="150" fill="none" stroke="#e5e5ea" stroke-width="6"/>
+  <!-- макро-точки Б/Ж/У (семантические цвета) -->
+  <circle cx="256" cy="188" r="24" fill="#ff375f"/>
+  <circle cx="197" cy="290" r="24" fill="#ff9f0a"/>
+  <circle cx="315" cy="290" r="24" fill="#30d158"/>
+</svg>

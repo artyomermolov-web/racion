@@ -1,0 +1,327 @@
+<title>Рацион для iOS</title>
+<!--
+  PROTOTYPE — throwaway. Направление выбрано: «Трекер» на базе Apple HIG.
+  Один стиль, три экрана (Сегодня / Рецепт / Покупки), светлая + тёмная тема.
+  HIG-принципы: крупные заголовки, inset grouped lists, segmented control,
+  кольца Б/Ж/У в духе «Активности», системный шрифт SF Pro, таб-бар с материалом.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Golos+Text:wght@400;500;600;700&display=swap">
+
+<style>
+  /* ---------- tokens: light (bare :root) ---------- */
+  :root{
+    --bg:#f2f2f7;            /* systemGroupedBackground */
+    --card:#ffffff;          /* secondary grouped */
+    --card2:#ffffff;
+    --label:#1c1c1e;
+    --label2:rgba(60,60,67,.6);
+    --label3:rgba(60,60,67,.3);
+    --sep:rgba(60,60,67,.15);
+    --fill:rgba(118,118,128,.12);
+    --tint:#007aff;          /* systemBlue */
+    --tint-press:#0063cc;
+    --good:#34c759;
+    --p:#ff375f;             /* белки */
+    --f:#ff9f0a;             /* жиры */
+    --c:#30d158;             /* углеводы */
+    --nav-blur:saturate(180%) blur(20px);
+    --nav-bg:rgba(242,242,247,.8);
+    --shadow:0 1px 2px rgba(0,0,0,.04);
+    color-scheme:light;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#000000;--card:#1c1c1e;--card2:#2c2c2e;
+      --label:#ffffff;--label2:rgba(235,235,245,.6);--label3:rgba(235,235,245,.3);
+      --sep:rgba(84,84,88,.55);--fill:rgba(118,118,128,.24);
+      --tint:#0a84ff;--tint-press:#409cff;--good:#30d158;
+      --p:#ff375f;--f:#ff9f0a;--c:#30d158;
+      --nav-bg:rgba(20,20,22,.75);--shadow:0 1px 2px rgba(0,0,0,.3);
+      color-scheme:dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#000000;--card:#1c1c1e;--card2:#2c2c2e;
+    --label:#ffffff;--label2:rgba(235,235,245,.6);--label3:rgba(235,235,245,.3);
+    --sep:rgba(84,84,88,.55);--fill:rgba(118,118,128,.24);
+    --tint:#0a84ff;--tint-press:#409cff;--good:#30d158;
+    --p:#ff375f;--f:#ff9f0a;--c:#30d158;
+    --nav-bg:rgba(20,20,22,.75);--shadow:0 1px 2px rgba(0,0,0,.3);
+    color-scheme:dark;
+  }
+
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg);color:var(--label);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Inter","Golos Text",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    display:flex;justify-content:center;
+    letter-spacing:-.011em;
+  }
+  .num{font-variant-numeric:tabular-nums}
+  [hidden]{display:none!important}
+  button{font-family:inherit;letter-spacing:inherit}
+
+  .app{width:100%;max-width:428px;min-height:100vh;background:var(--bg);position:relative;padding-bottom:96px}
+
+  /* ---------- nav (large title) ---------- */
+  .nav{position:sticky;top:0;z-index:20;background:var(--nav-bg);
+    -webkit-backdrop-filter:var(--nav-blur);backdrop-filter:var(--nav-blur);
+    padding:8px 20px 6px;border-bottom:.5px solid var(--sep)}
+  .nav-row{display:flex;align-items:center;justify-content:space-between;min-height:36px}
+  .lt{font-size:32px;font-weight:700;letter-spacing:-.02em;margin:0;line-height:1.1}
+  .lt-sub{font-size:14px;color:var(--label2);margin-top:1px}
+  .nav-btn{width:36px;height:36px;border-radius:50%;border:0;background:var(--fill);color:var(--tint);
+    font-size:17px;cursor:pointer;display:grid;place-items:center}
+
+  /* segmented control */
+  .seg{margin:12px 16px 0;background:var(--fill);border-radius:9px;padding:2px;display:flex;position:relative}
+  .seg button{flex:1;border:0;background:transparent;color:var(--label);font-size:13px;font-weight:600;
+    padding:7px 4px;border-radius:7px;cursor:pointer;z-index:1;transition:color .2s}
+  .seg button[aria-selected="true"]{background:var(--card2);box-shadow:0 1px 3px rgba(0,0,0,.12),0 0 0 .5px rgba(0,0,0,.04)}
+  :root[data-theme="dark"] .seg button[aria-selected="true"]{box-shadow:0 1px 3px rgba(0,0,0,.4)}
+
+  main{padding:16px 16px 24px;animation:fade .25s ease}
+  @keyframes fade{from{opacity:.5}to{opacity:1}}
+  @media (prefers-reduced-motion:reduce){main{animation:none}}
+
+  /* grouped list */
+  .group{background:var(--card);border-radius:12px;overflow:hidden;box-shadow:var(--shadow);margin-bottom:20px}
+  .g-title{font-size:13px;font-weight:600;color:var(--label2);text-transform:uppercase;letter-spacing:.03em;
+    margin:0 8px 7px;}
+  .row{display:flex;align-items:center;gap:12px;padding:12px 16px;position:relative}
+  .row+.row::before{content:"";position:absolute;left:16px;right:0;top:0;height:.5px;background:var(--sep)}
+  .row.ins+.row.ins::before{left:64px}
+  .grow{flex:1;min-width:0}
+  .chev{color:var(--label3);font-size:18px;flex:none}
+
+  /* summary + rings */
+  .summary{display:flex;align-items:center;gap:18px;padding:18px 16px}
+  .summary svg{width:104px;height:104px;flex:none}
+  .sum-k{font-size:30px;font-weight:700;letter-spacing:-.02em;line-height:1}
+  .sum-k small{font-size:14px;font-weight:500;color:var(--label2);letter-spacing:0}
+  .pill{display:inline-flex;align-items:center;gap:5px;background:color-mix(in srgb,var(--good) 15%,transparent);
+    color:var(--good);font-size:12px;font-weight:600;padding:4px 9px;border-radius:20px;margin-top:8px}
+  .pill::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--good)}
+  .legend{display:flex;gap:14px;margin-top:12px}
+  .legend div{font-size:12px;color:var(--label2)}
+  .legend b{display:block;color:var(--label);font-size:15px;font-weight:600;margin-top:1px}
+  .legend .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:1px}
+
+  /* meal row */
+  .thumb{width:52px;height:52px;border-radius:11px;flex:none;position:relative;overflow:hidden}
+  .thumb::after{content:"";position:absolute;inset:0;background:radial-gradient(120% 90% at 75% 12%,rgba(255,255,255,.28),transparent 55%)}
+  .slot{font-size:12px;font-weight:600;color:var(--tint)}
+  .m-name{font-size:16px;font-weight:600;line-height:1.2;margin:1px 0 3px}
+  .m-macros{font-size:13px;color:var(--label2)}
+  .m-k{text-align:right;flex:none}
+  .m-k .n{font-size:16px;font-weight:600}
+  .m-k .u{font-size:11px;color:var(--label2)}
+
+  /* buttons */
+  .btn{display:block;width:100%;border:0;background:var(--tint);color:#fff;font-size:16px;font-weight:600;
+    padding:14px;border-radius:13px;cursor:pointer;text-align:center;margin-bottom:10px}
+  .btn:active{background:var(--tint-press)}
+  .btn.tinted{background:color-mix(in srgb,var(--tint) 14%,transparent);color:var(--tint)}
+  .btn.gray{background:var(--fill);color:var(--label)}
+
+  /* dish */
+  .hero{height:200px;border-radius:16px;position:relative;overflow:hidden;margin-bottom:16px}
+  .hero::after{content:"";position:absolute;inset:0;background:radial-gradient(120% 90% at 78% 10%,rgba(255,255,255,.25),transparent 55%)}
+  .statgrid{display:flex;background:var(--card);border-radius:12px;box-shadow:var(--shadow);margin-bottom:20px;overflow:hidden}
+  .statgrid div{flex:1;text-align:center;padding:14px 6px;position:relative}
+  .statgrid div+div::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:.5px;background:var(--sep)}
+  .statgrid .n{font-size:19px;font-weight:700}
+  .statgrid .l{font-size:11px;color:var(--label2);margin-top:2px;text-transform:uppercase;letter-spacing:.03em}
+  .kv{display:flex;justify-content:space-between;padding:12px 16px;position:relative;font-size:16px}
+  .kv+.kv::before{content:"";position:absolute;left:16px;right:0;top:0;height:.5px;background:var(--sep)}
+  .kv span:last-child{color:var(--label2)}
+  .steps{margin:0;padding:4px 0;list-style:none;counter-reset:s}
+  .steps li{position:relative;padding:12px 16px 12px 52px;font-size:16px;line-height:1.45}
+  .steps li+li::before{content:"";position:absolute;left:52px;right:0;top:0;height:.5px;background:var(--sep)}
+  .steps li>span{counter-increment:s;position:absolute;left:16px;top:12px;width:26px;height:26px;border-radius:50%;
+    background:var(--tint);color:#fff;display:grid;place-items:center;font-size:14px;font-weight:600}
+  .steps li>span::before{content:counter(s)}
+
+  /* shop */
+  .total{background:var(--card);border-radius:12px;box-shadow:var(--shadow);padding:16px;margin-bottom:20px;
+    display:flex;justify-content:space-between;align-items:center}
+  .total .n{font-size:28px;font-weight:700;letter-spacing:-.02em}
+  .total .s{font-size:13px;color:var(--label2)}
+  .cb{width:24px;height:24px;border-radius:50%;border:1.5px solid var(--label3);flex:none;position:relative;cursor:pointer}
+  .done .cb{background:var(--good);border-color:var(--good)}
+  .done .cb::after{content:"";position:absolute;left:8px;top:4px;width:6px;height:11px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+  .done .s-name{color:var(--label2);text-decoration:line-through}
+  .s-name{font-size:16px;font-weight:600}
+  .s-sub{font-size:13px;color:var(--label2);margin-top:2px}
+  .s-pr{font-size:16px;font-weight:600;flex:none}
+
+  /* tab bar */
+  .tabbar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:428px;z-index:30;
+    background:var(--nav-bg);-webkit-backdrop-filter:var(--nav-blur);backdrop-filter:var(--nav-blur);
+    border-top:.5px solid var(--sep);display:flex;padding:8px 0 22px}
+  .tabbar a{flex:1;text-align:center;color:var(--label2);font-size:10px;font-weight:500;text-decoration:none;display:flex;flex-direction:column;align-items:center;gap:3px}
+  .tabbar a.on{color:var(--tint)}
+  .tabbar svg{width:26px;height:26px;stroke:currentColor;fill:none;stroke-width:1.7}
+  :focus-visible{outline:2px solid var(--tint);outline-offset:2px}
+</style>
+
+<div class="app">
+  <header class="nav">
+    <div class="nav-row"><h1 class="lt" id="navTitle">Сегодня</h1>
+      <button class="nav-btn" id="theme" aria-label="Тема">☾</button></div>
+    <div class="lt-sub" id="navSub">Понедельник, 8 сентября</div>
+  </header>
+  <div class="seg" role="tablist" id="seg"></div>
+  <main id="main"></main>
+</div>
+
+<nav class="tabbar">
+  <a class="on"><svg viewBox="0 0 24 24"><path d="M4 13h6V4H4zM14 20h6v-9h-6zM14 4v5h6V4zM4 20h6v-5H4z"/></svg>Меню</a>
+  <a><svg viewBox="0 0 24 24"><path d="M6 2h12v20l-6-4-6 4z"/></svg>База</a>
+  <a><svg viewBox="0 0 24 24"><circle cx="9" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M3 4h2l2.5 12h11l2-8H6"/></svg>Покупки</a>
+  <a><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>Профиль</a>
+</nav>
+
+<script>
+/* ---------- data ---------- */
+const DAY={total:1780,min:1750,max:1950,pct:88,
+  P:{v:122,max:150,pct:81},F:{v:59,max:75,pct:79},C:{v:181,max:210,pct:86},
+  meals:[
+    {slot:"Завтрак",name:"Овсянка с бананом и грецким орехом",kcal:440,p:20,f:17,c:55,time:12,g:["#f0c56a","#e0913f"]},
+    {slot:"Обед",name:"Гречка с тушёной говядиной",kcal:620,p:42,f:20,c:66,time:35,g:["#a9754a","#5e3a24"]},
+    {slot:"Перекус",name:"Творог 5% с мёдом",kcal:250,p:20,f:9,c:22,time:3,g:["#f0e2b8","#d9b25e"]},
+    {slot:"Ужин",name:"Запечённая треска с овощами",kcal:470,p:40,f:13,c:38,time:30,g:["#77b485","#357a63"]},
+  ]};
+const DISH={slot:"Обед",name:"Гречка с тушёной говядиной",kcal:620,p:42,f:20,c:66,time:35,tech:"Плита",portion:"1 порция",g:["#a9754a","#5e3a24"],
+  ing:[["Гречка ядрица","80 г"],["Говядина, лопатка","120 г"],["Лук репчатый","40 г"],["Морковь","40 г"],["Масло растительное","8 г"],["Соль, перец","по вкусу"]],
+  steps:["Промойте гречку, залейте 180 мл воды, посолите и варите под крышкой 15 минут.",
+    "Говядину нарежьте кубиками и обжарьте на масле 5 минут до румяности.",
+    "Добавьте лук и морковь, тушите под крышкой 12–15 минут до мягкости.",
+    "Соедините с готовой гречкой, дайте настояться пару минут и подавайте."]};
+const SHOP={total:2340,from:"8 сен",to:"14 сен",positions:12,bought:3,
+  items:[
+    {nm:"Гречка ядрица",sub:"пачка 900 г · ×1 · останется 340 г",pr:92,done:true},
+    {nm:"Говядина, лопатка",sub:"упак. 700 г · ×2 · останется 580 г",pr:840,done:false},
+    {nm:"Овсяные хлопья",sub:"пачка 500 г · ×1 · останется 260 г",pr:78,done:true},
+    {nm:"Треска, филе",sub:"упак. 400 г · ×2 · останется 300 г",pr:640,done:false},
+    {nm:"Творог 5%",sub:"пачка 200 г · ×3 · останется 0 г",pr:267,done:false},
+    {nm:"Мёд натуральный",sub:"банка 250 г · ×1 · останется 190 г",pr:210,done:true},
+    {nm:"Грецкий орех",sub:"упак. 150 г · ×1 · останется 60 г",pr:213,done:false},
+  ]};
+const money=n=>n.toLocaleString('ru-RU')+" ₽";
+const grad=g=>`background:linear-gradient(135deg,${g[0]},${g[1]})`;
+
+/* activity-style concentric rings */
+function rings(){
+  const size=104,sw=10,gap=4,ctr=size/2;
+  const data=[{pct:DAY.P.pct,col:'var(--p)'},{pct:DAY.F.pct,col:'var(--f)'},{pct:DAY.C.pct,col:'var(--c)'}];
+  let out=`<svg viewBox="0 0 ${size} ${size}">`;
+  data.forEach((d,i)=>{
+    const r=(size-sw)/2 - i*(sw+gap), c=2*Math.PI*r, off=c*(1-d.pct/100);
+    out+=`<circle cx="${ctr}" cy="${ctr}" r="${r}" fill="none" stroke="${d.col}" stroke-opacity=".2" stroke-width="${sw}"/>
+      <circle cx="${ctr}" cy="${ctr}" r="${r}" fill="none" stroke="${d.col}" stroke-width="${sw}" stroke-linecap="round"
+      stroke-dasharray="${c}" stroke-dashoffset="${off}" transform="rotate(-90 ${ctr} ${ctr})"/>`;
+  });
+  return out+`</svg>`;
+}
+
+/* ---------- screens ---------- */
+const SCREENS={
+  week:{title:"Сегодня",sub:"Понедельник, 8 сентября",render:()=>`
+    <div class="group"><div class="summary">
+      ${rings()}
+      <div class="grow">
+        <div class="sum-k num">${money(DAY.total).replace(' ₽','')} <small>/ ${DAY.min}–${DAY.max} ккал</small></div>
+        <div class="pill">В пределах нормы</div>
+        <div class="legend">
+          <div><span class="dot" style="background:var(--p)"></span>Белки<b class="num">${DAY.P.v} г</b></div>
+          <div><span class="dot" style="background:var(--f)"></span>Жиры<b class="num">${DAY.F.v} г</b></div>
+          <div><span class="dot" style="background:var(--c)"></span>Углев.<b class="num">${DAY.C.v} г</b></div>
+        </div>
+      </div>
+    </div></div>
+    <div class="g-title">Приёмы пищи</div>
+    <div class="group">
+      ${DAY.meals.map(m=>`<div class="row ins">
+        <div class="thumb" style="${grad(m.g)}"></div>
+        <div class="grow"><div class="slot">${m.slot}</div><div class="m-name">${m.name}</div>
+          <div class="m-macros num">Б ${m.p} · Ж ${m.f} · У ${m.c} · ${m.time} мин</div></div>
+        <div class="m-k"><div class="n num">${m.kcal}</div><div class="u">ккал</div></div>
+        <span class="chev">›</span>
+      </div>`).join("")}
+    </div>
+    <button class="btn">Перегенерировать день</button>
+    <button class="btn tinted">Добавить приём</button>`},
+
+  dish:{title:"Рецепт",sub:"Обед · 35 мин · Плита",render:()=>`
+    <div class="hero" style="${grad(DISH.g)}"></div>
+    <div class="g-title" style="margin-top:-6px">${DISH.slot} · ${DISH.tech} · ${DISH.time} мин · ${DISH.portion}</div>
+    <div class="statgrid num">
+      <div><div class="n">${DISH.kcal}</div><div class="l">ккал</div></div>
+      <div><div class="n">${DISH.p}</div><div class="l">белки</div></div>
+      <div><div class="n">${DISH.f}</div><div class="l">жиры</div></div>
+      <div><div class="n">${DISH.c}</div><div class="l">углев.</div></div>
+    </div>
+    <div class="g-title">Ингредиенты · 1 порция</div>
+    <div class="group">${DISH.ing.map(i=>`<div class="kv"><span>${i[0]}</span><span class="num">${i[1]}</span></div>`).join("")}</div>
+    <div class="g-title">Приготовление</div>
+    <div class="group"><ol class="steps">${DISH.steps.map(s=>`<li><span></span>${s}</li>`).join("")}</ol></div>
+    <button class="btn">Добавить в план</button>
+    <button class="btn tinted">В избранное</button>
+    <button class="btn gray">Персонализировать рецепт</button>`},
+
+  shop:{title:"Покупки",sub:"8–14 сентября · 12 позиций",render:()=>`
+    <div class="total"><div><div class="s">Итого по чеку · целыми пачками</div>
+      <div class="n num">${money(SHOP.total)}</div></div>
+      <div style="text-align:right"><div class="s">куплено</div><div class="n num" style="font-size:20px">${SHOP.bought}/${SHOP.positions}</div></div></div>
+    <div class="g-title">Продукты</div>
+    <div class="group">
+      ${SHOP.items.map((it,i)=>`<div class="row ins ${it.done?'done':''}" data-shop="${i}">
+        <div class="cb"></div>
+        <div class="grow"><div class="s-name">${it.nm}</div><div class="s-sub num">${it.sub}</div></div>
+        <div class="s-pr num">${money(it.pr)}</div>
+      </div>`).join("")}
+    </div>
+    <button class="btn">Подтвердить покупку → в кладовку</button>
+    <button class="btn tinted">Печать · компактный вид</button>`},
+};
+
+/* ---------- shell ---------- */
+const order=["week","dish","shop"];
+const labels={week:"Сегодня",dish:"Рецепт",shop:"Покупки"};
+const params=new URLSearchParams(location.search);
+let cur=order.includes(params.get("screen"))?params.get("screen"):"week";
+
+const seg=document.getElementById("seg");
+seg.innerHTML=order.map(k=>`<button role="tab" data-k="${k}" aria-selected="false">${labels[k]}</button>`).join("");
+
+function render(){
+  const S=SCREENS[cur];
+  document.getElementById("navTitle").textContent=S.title;
+  document.getElementById("navSub").textContent=S.sub;
+  document.getElementById("main").innerHTML=S.render();
+  seg.querySelectorAll("button").forEach(b=>b.setAttribute("aria-selected",b.dataset.k===cur));
+  document.querySelectorAll("[data-shop]").forEach(el=>el.addEventListener("click",()=>el.classList.toggle("done")));
+  const p=new URLSearchParams();p.set("screen",cur);history.replaceState(null,"","?"+p);
+  window.scrollTo({top:0});
+}
+seg.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{cur=b.dataset.k;render();}));
+
+/* theme toggle */
+function getTheme(){try{return localStorage.getItem("racion-theme")}catch(e){return null}}
+function apply(t){const r=document.documentElement;
+  if(t)r.setAttribute("data-theme",t);else r.removeAttribute("data-theme");
+  const dark = t==="dark" || (!t && matchMedia("(prefers-color-scheme:dark)").matches);
+  document.getElementById("theme").textContent=dark?"☀":"☾";}
+let theme=getTheme();apply(theme);
+document.getElementById("theme").addEventListener("click",()=>{
+  const dark=document.getElementById("theme").textContent==="☀";
+  theme=dark?"light":"dark";try{localStorage.setItem("racion-theme",theme)}catch(e){}
+  apply(theme);});
+
+render();
+</script>

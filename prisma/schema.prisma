@@ -1,0 +1,38 @@
+// Схема Prisma — срез 11 (каркас + вход).
+// Пока только сущности аккаунта: User + Session (тикеты 04, 08).
+// Портируемость SQLite -> PostgreSQL: смена provider + DATABASE_URL, схема без изменений.
+// Остальные сущности модели данных (тикет 04) добавляются своими тикетами (12+).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  // Согласие на обработку данных при регистрации (тикет 08, приватность).
+  consentAt    DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions Session[]
+}
+
+model Session {
+  id String @id @default(cuid())
+  // В БД хранится только SHA-256 хеш токена; сырой токен живёт в httpOnly-cookie.
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}

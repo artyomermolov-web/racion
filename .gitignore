@@ -1,0 +1,32 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# next.js
+/.next/
+/out/
+next-env.d.ts
+
+# production
+/build
+
+# prisma / sqlite (локальная БД разработки)
+/prisma/*.db
+/prisma/*.db-journal
+/prisma/dev.db*
+
+# env
+.env
+.env*.local
+
+# локальные настройки Claude Code (личные, не в репозиторий)
+.claude/settings.local.json
+
+# misc
+*.tsbuildinfo
+.DS_Store
+npm-debug.log*
+
+# scratch (рабочие материалы агентов уже под контролем; временные — нет)
+/.scratch/**/tmp/

@@ -1,0 +1,436 @@
+@import "tailwindcss";
+
+/* ================================================================
+   Дизайн-система «Рацион» — нативный iOS-look (Apple HIG, тикет 09).
+   Токены и базовые компоненты перенесены из прототипа screens.html
+   и переписаны начисто как переиспользуемая основа.
+   ================================================================ */
+
+/* ---------- токены: светлая тема (bare :root) ---------- */
+:root {
+  --bg: #f2f2f7; /* systemGroupedBackground */
+  --card: #ffffff;
+  --card2: #ffffff;
+  --label: #1c1c1e;
+  --label2: rgba(60, 60, 67, 0.6);
+  --label3: rgba(60, 60, 67, 0.3);
+  --sep: rgba(60, 60, 67, 0.15);
+  --fill: rgba(118, 118, 128, 0.12);
+  --tint: #007aff; /* systemBlue */
+  --tint-press: #0063cc;
+  --good: #34c759;
+  --danger: #ff3b30;
+  --p: #ff375f; /* белки */
+  --f: #ff9f0a; /* жиры */
+  --c: #30d158; /* углеводы */
+  --nav-blur: saturate(180%) blur(20px);
+  --nav-bg: rgba(242, 242, 247, 0.8);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  color-scheme: light;
+}
+
+/* системная тёмная (когда пользователь не задал ручной выбор) */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #000000;
+    --card: #1c1c1e;
+    --card2: #2c2c2e;
+    --label: #ffffff;
+    --label2: rgba(235, 235, 245, 0.6);
+    --label3: rgba(235, 235, 245, 0.3);
+    --sep: rgba(84, 84, 88, 0.55);
+    --fill: rgba(118, 118, 128, 0.24);
+    --tint: #0a84ff;
+    --tint-press: #409cff;
+    --good: #30d158;
+    --danger: #ff453a;
+    --nav-bg: rgba(20, 20, 22, 0.75);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    color-scheme: dark;
+  }
+}
+
+/* ручной выбор тёмной темы (перебивает системную настройку) */
+:root[data-theme="dark"] {
+  --bg: #000000;
+  --card: #1c1c1e;
+  --card2: #2c2c2e;
+  --label: #ffffff;
+  --label2: rgba(235, 235, 245, 0.6);
+  --label3: rgba(235, 235, 245, 0.3);
+  --sep: rgba(84, 84, 88, 0.55);
+  --fill: rgba(118, 118, 128, 0.24);
+  --tint: #0a84ff;
+  --tint-press: #409cff;
+  --good: #30d158;
+  --danger: #ff453a;
+  --nav-bg: rgba(20, 20, 22, 0.75);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+body {
+  background: var(--bg);
+  color: var(--label);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    "Inter", "Golos Text", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.011em;
+  min-height: 100vh;
+}
+.num {
+  font-variant-numeric: tabular-nums;
+}
+button {
+  font-family: inherit;
+  letter-spacing: inherit;
+}
+:focus-visible {
+  outline: 2px solid var(--tint);
+  outline-offset: 2px;
+}
+
+/* ---------- каркас телефона ---------- */
+.app {
+  width: 100%;
+  max-width: 428px;
+  margin: 0 auto;
+  min-height: 100vh;
+  background: var(--bg);
+  position: relative;
+}
+.app.with-tabbar {
+  padding-bottom: 96px;
+}
+
+/* ---------- nav (large title) ---------- */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--nav-bg);
+  -webkit-backdrop-filter: var(--nav-blur);
+  backdrop-filter: var(--nav-blur);
+  padding: 8px 20px 6px;
+  border-bottom: 0.5px solid var(--sep);
+}
+.nav-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 36px;
+  gap: 8px;
+}
+.lt {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0;
+  line-height: 1.1;
+}
+.lt-sub {
+  font-size: 14px;
+  color: var(--label2);
+  margin-top: 1px;
+}
+.nav-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--fill);
+  color: var(--tint);
+  font-size: 17px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+/* ---------- segmented control ---------- */
+.seg {
+  margin: 12px 16px 0;
+  background: var(--fill);
+  border-radius: 9px;
+  padding: 2px;
+  display: flex;
+  position: relative;
+}
+.seg button {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--label);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 4px;
+  border-radius: 7px;
+  cursor: pointer;
+  z-index: 1;
+  transition: color 0.2s;
+}
+.seg button[aria-selected="true"] {
+  background: var(--card2);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+}
+:root[data-theme="dark"] .seg button[aria-selected="true"],
+:root:not([data-theme="light"]) .seg button[aria-selected="true"] {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+/* ---------- контент ---------- */
+main {
+  padding: 16px;
+}
+
+/* ---------- inset grouped list ---------- */
+.g-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--label2);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin: 0 8px 7px;
+}
+.group {
+  background: var(--card);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  margin-bottom: 20px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  position: relative;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font-size: 16px;
+}
+.row + .row::before {
+  content: "";
+  position: absolute;
+  left: 16px;
+  right: 0;
+  top: 0;
+  height: 0.5px;
+  background: var(--sep);
+}
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+.chev {
+  color: var(--label3);
+  font-size: 18px;
+  flex: none;
+}
+
+/* ---------- кнопки ---------- */
+.btn {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: var(--tint);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  padding: 14px;
+  border-radius: 13px;
+  cursor: pointer;
+  text-align: center;
+  margin-bottom: 10px;
+}
+.btn:active {
+  background: var(--tint-press);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.btn.tinted {
+  background: color-mix(in srgb, var(--tint) 14%, transparent);
+  color: var(--tint);
+}
+.btn.gray {
+  background: var(--fill);
+  color: var(--label);
+}
+
+/* ---------- формы ---------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.field > label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--label2);
+  padding: 0 4px;
+}
+.input {
+  width: 100%;
+  border: 0;
+  background: var(--card);
+  color: var(--label);
+  font-size: 17px;
+  padding: 13px 14px;
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+.input::placeholder {
+  color: var(--label3);
+}
+.error {
+  color: var(--danger);
+  font-size: 13px;
+  padding: 0 4px;
+}
+.form-error {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 12px 14px;
+  border-radius: 12px;
+  margin-bottom: 14px;
+}
+.consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--label2);
+  line-height: 1.4;
+  padding: 2px 4px 4px;
+  margin-bottom: 14px;
+}
+.consent input {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  flex: none;
+  accent-color: var(--tint);
+}
+.consent a {
+  color: var(--tint);
+  text-decoration: none;
+}
+
+/* ---------- пустое состояние ---------- */
+.empty {
+  text-align: center;
+  padding: 56px 24px;
+  color: var(--label2);
+}
+.empty .icon {
+  font-size: 44px;
+  line-height: 1;
+  margin-bottom: 14px;
+}
+.empty h2 {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--label);
+  margin: 0 0 6px;
+}
+.empty p {
+  font-size: 15px;
+  margin: 0 auto;
+  max-width: 300px;
+  line-height: 1.4;
+}
+
+/* ---------- таб-бар ---------- */
+.tabbar {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 428px;
+  z-index: 30;
+  background: var(--nav-bg);
+  -webkit-backdrop-filter: var(--nav-blur);
+  backdrop-filter: var(--nav-blur);
+  border-top: 0.5px solid var(--sep);
+  display: flex;
+  padding: 8px 0 22px;
+}
+.tabbar a {
+  flex: 1;
+  text-align: center;
+  color: var(--label2);
+  font-size: 10px;
+  font-weight: 500;
+  text-decoration: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.tabbar a.on {
+  color: var(--tint);
+}
+.tabbar svg {
+  width: 26px;
+  height: 26px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.7;
+}
+
+/* ---------- центрированный экран входа ---------- */
+.auth {
+  padding: 40px 20px 24px;
+}
+.auth .brand {
+  text-align: center;
+  margin-bottom: 28px;
+}
+.auth .brand .logo {
+  font-size: 40px;
+}
+.auth .brand h1 {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 8px 0 2px;
+}
+.auth .brand p {
+  color: var(--label2);
+  font-size: 15px;
+  margin: 0;
+}
+.auth .switch {
+  text-align: center;
+  font-size: 15px;
+  color: var(--label2);
+  margin-top: 18px;
+}
+.auth .switch a {
+  color: var(--tint);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+  }
+}
