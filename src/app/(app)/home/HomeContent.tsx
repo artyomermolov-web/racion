@@ -4,14 +4,22 @@ import { useState } from "react";
 import { SegmentedControl } from "@/components/ios/SegmentedControl";
 import { EmptyState } from "@/components/ios/EmptyState";
 import { NormCard, type NormRanges } from "@/components/NormCard";
+import { DayPlan } from "@/components/DayPlan";
+import type { DisplayDay } from "@/lib/generator";
 
 const OPTIONS = [
   { key: "today", label: "Сегодня" },
   { key: "week", label: "Неделя" },
 ];
 
-/** Домашний экран: норма (если рассчитана) + пустое состояние плана. */
-export function HomeContent({ norm }: { norm: NormRanges | null }) {
+/** Домашний экран: норма + план дня (если собран) + пустые состояния. */
+export function HomeContent({
+  norm,
+  day,
+}: {
+  norm: NormRanges | null;
+  day: DisplayDay | null;
+}) {
   const [segment, setSegment] = useState("today");
 
   return (
@@ -30,15 +38,19 @@ export function HomeContent({ norm }: { norm: NormRanges | null }) {
           </>
         ) : null}
         {segment === "today" ? (
-          <EmptyState
-            icon="🍽️"
-            title="Плана на сегодня пока нет"
-            description={
-              norm
-                ? "Норма рассчитана — генерация рациона под ваши КБЖУ появится в следующем шаге."
-                : "Заполните профиль и рассчитайте норму — и мы соберём рацион под ваши КБЖУ. Это следующий шаг."
-            }
-          />
+          day ? (
+            <DayPlan initial={day} />
+          ) : (
+            <EmptyState
+              icon="🍽️"
+              title="Плана на сегодня пока нет"
+              description={
+                norm
+                  ? "Не удалось собрать день из базы — проверьте, что база наполнена (npm run seed)."
+                  : "Заполните профиль и рассчитайте норму — и мы соберём рацион под ваши КБЖУ."
+              }
+            />
+          )
         ) : (
           <EmptyState
             icon="🗓️"
