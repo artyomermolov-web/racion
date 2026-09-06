@@ -94,4 +94,39 @@ describe("filterCandidates — жёсткие ограничения по сло
     });
     expect(out.map((r) => r.id)).toEqual(["c"]);
   });
+
+  // Тест «на утечки» №2 (тикет 06): заблокированное блюдо не появляется.
+  it("заблокированное блюдо (blockedRecipeIds) не проходит", () => {
+    const keep = recipe({ id: "keep" });
+    const banned = recipe({ id: "banned" });
+    const out = filterCandidates([keep, banned], slot(), {
+      excludedAllergens: [],
+      blockedRecipeIds: ["banned"],
+    });
+    expect(out.map((r) => r.id)).toEqual(["keep"]);
+  });
+
+  // Тест «на утечки» №3 (тикет 06): keyword-фильтр ловит синонимы. Синонимы
+  // приходят уже развёрнутыми в keywords рецепта (группа-тег): все куриные
+  // варианты несут общий тег «курица», один фильтр отсекает их все.
+  it("keyword-фильтр по группе отсекает все синонимы (грудка/бедро/фарш)", () => {
+    const breast = recipe({ id: "breast", keywords: ["курица", "грудка"] });
+    const thigh = recipe({ id: "thigh", keywords: ["курица", "бедро"] });
+    const mince = recipe({ id: "mince", keywords: ["курица", "фарш"] });
+    const beef = recipe({ id: "beef", keywords: ["говядина"] });
+    const out = filterCandidates([breast, thigh, mince, beef], slot(), {
+      excludedAllergens: [],
+      keywordFilter: ["курица"],
+    });
+    expect(out.map((r) => r.id)).toEqual(["beef"]);
+  });
+
+  it("keyword-фильтр совпадает без учёта регистра и по подстроке", () => {
+    const chicken = recipe({ id: "chicken", keywords: ["Куриный суп"] });
+    const out = filterCandidates([chicken], slot(), {
+      excludedAllergens: [],
+      keywordFilter: ["КУРИН"],
+    });
+    expect(out).toEqual([]);
+  });
 });

@@ -5,7 +5,17 @@
 // (тикет 06 шаг 9). Персистентности плана в «тонком» слое нет: день живёт в
 // состоянии клиента, а действия возвращают свежий результат под текущую норму.
 import { requireUser } from "@/lib/auth";
-import { buildDay, replaceMeal, type DisplayDay, type DayMeal, type MealRef } from "@/lib/generator";
+import {
+  buildDay,
+  replaceMeal,
+  buildWeek,
+  regenerateWeekDay,
+  replaceWeekMeal,
+  type DisplayDay,
+  type DisplayWeek,
+  type DayMeal,
+  type MealRef,
+} from "@/lib/generator";
 import type { Slot } from "@/core/generator";
 
 /** Перегенерировать день: новый seed → свежий вариант под норму пользователя. */
@@ -22,4 +32,33 @@ export async function replaceMealAction(
 ): Promise<DayMeal | null> {
   const user = await requireUser();
   return replaceMeal(user.id, current, slot, seed);
+}
+
+// ── Уровень недели (тикет 15) ────────────────────────────────────────────────
+
+/** Перегенерировать всю неделю: новый seed → свежий вариант под норму. */
+export async function regenerateWeekAction(seed: number): Promise<DisplayWeek | null> {
+  const user = await requireUser();
+  return buildWeek(user.id, seed);
+}
+
+/** Перегенерировать один день недели под остаток целей (прочие дни не трогаем). */
+export async function regenerateWeekDayAction(
+  current: MealRef[][],
+  dayIndex: number,
+  seed: number,
+): Promise<DisplayWeek | null> {
+  const user = await requireUser();
+  return regenerateWeekDay(user.id, current, dayIndex, seed);
+}
+
+/** Заменить блюдо в приёме конкретного дня недели под остаток дня. */
+export async function replaceWeekMealAction(
+  current: MealRef[][],
+  dayIndex: number,
+  slot: Slot,
+  seed: number,
+): Promise<DisplayWeek | null> {
+  const user = await requireUser();
+  return replaceWeekMeal(user.id, current, dayIndex, slot, seed);
 }

@@ -23,6 +23,23 @@ function equipmentAvailable(recipe: GeneratorRecipe, slot: MealSlot): boolean {
 }
 
 /**
+ * Ловит ли keyword-фильтр это блюдо? Совпадение без учёта регистра, по
+ * подстроке: термин фильтра «куриц» отсекает keyword «Куриный суп». Синонимы
+ * приходят в keywords уже как общий тег группы (тикет 06 шаг 1).
+ */
+function matchesKeywordFilter(
+  recipe: GeneratorRecipe,
+  filter: readonly string[],
+): boolean {
+  if (!filter || filter.length === 0) return false;
+  const keywords = (recipe.keywords ?? []).map((k) => k.toLowerCase());
+  return filter.some((term) => {
+    const t = term.toLowerCase();
+    return keywords.some((k) => k.includes(t));
+  });
+}
+
+/**
  * Пул кандидатов на слот: оставляет только блюда, проходящие ВСЕ жёсткие
  * ограничения. Порядок кандидатов сохраняется (детерминизм; перемешивание для
  * разнообразия — на слое сборки дня).
@@ -32,11 +49,17 @@ export function filterCandidates(
   slot: MealSlot,
   constraints: GeneratorConstraints,
 ): GeneratorRecipe[] {
+  const blocked = new Set(constraints.blockedRecipeIds ?? []);
+  const keywordFilter = constraints.keywordFilter ?? [];
   return recipes.filter((r) => {
     // Совместимость слота: рецепт должен явно поддерживать текущий слот.
     if (!r.slots.includes(slot.slot)) return false;
-    // Аллергены/стоп-лист.
+    // Аллергены.
     if (hasExcludedAllergen(r, constraints.excludedAllergens)) return false;
+    // Стоп-лист по id (заблокированное блюдо).
+    if (blocked.has(r.id)) return false;
+    // Keyword-фильтр (совпадение по синонимам названия).
+    if (matchesKeywordFilter(r, keywordFilter)) return false;
     // Приём «без готовки»: только блюда, которым не нужна техника.
     if (!slot.canCook && r.equipment.some((e) => e !== "none")) return false;
     // Требуемая техника должна быть доступна.

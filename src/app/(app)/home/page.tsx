@@ -1,6 +1,6 @@
 import { requireUser } from "@/lib/auth";
 import { getProfileData } from "@/lib/profile";
-import { buildDay } from "@/lib/generator";
+import { buildDay, buildWeek } from "@/lib/generator";
 import { hashString } from "@/core/generator";
 import { LargeTitleHeader } from "@/components/ios/LargeTitleHeader";
 import { ThemeToggle } from "@/components/ios/ThemeToggle";
@@ -21,11 +21,17 @@ export default async function HomePage() {
   const { nutrition } = await getProfileData(user.id);
   const norm: NormRanges | null = nutrition;
 
-  // Стабильный seed дня от (userId + дата): один и тот же план на дату держится
-  // при перезагрузках и не меняется от правок настроек — перегенерация только по
-  // кнопке (тикет 06 шаг 9). Сборка дня возвращает null, если норма не рассчитана.
+  // Стабильный seed от (userId + дата): один и тот же план держится при
+  // перезагрузках и не меняется от правок настроек — перегенерация только по
+  // кнопке (тикет 06 шаг 9). Сборка возвращает null, если норма не рассчитана.
+  // Неделя получает свой seed-суффикс, чтобы не повторять день-в-день.
   const dateKey = new Date().toISOString().slice(0, 10);
-  const day = norm ? await buildDay(user.id, hashString(user.id + dateKey)) : null;
+  const [day, week] = norm
+    ? await Promise.all([
+        buildDay(user.id, hashString(user.id + dateKey)),
+        buildWeek(user.id, hashString(user.id + dateKey + "week")),
+      ])
+    : [null, null];
 
   return (
     <>
@@ -34,7 +40,7 @@ export default async function HomePage() {
         subtitle={todayLabel()}
         trailing={<ThemeToggle />}
       />
-      <HomeContent norm={norm} day={day} />
+      <HomeContent norm={norm} day={day} week={week} />
     </>
   );
 }

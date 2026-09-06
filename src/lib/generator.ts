@@ -8,11 +8,16 @@ import { computeRecipeNutrition, type FoodNutrients } from "@/core/nutrition";
 import {
   generateDay,
   replaceDish,
+  generateWeek,
+  regenerateDay,
+  replaceMealInWeek,
   scalePortion,
   DEFAULT_DAY_LAYOUT,
   type GeneratorRecipe,
   type DayTarget,
+  type NutrientRanges,
   type PlanItem,
+  type GeneratedWeek,
   type Slot,
   type Allergen,
 } from "@/core/generator";
@@ -41,6 +46,22 @@ export interface MealRef {
   portion: number;
 }
 
+/** Один день недели для UI: приёмы + сумма КБЖУ за день. */
+export interface DisplayWeekDay {
+  meals: DayMeal[];
+  totals: FoodNutrients;
+}
+
+/** Собранная неделя для UI: дни, недельное среднее, диапазоны, флаг компромисса. */
+export interface DisplayWeek {
+  days: DisplayWeekDay[];
+  weeklyAverage: FoodNutrients;
+  ranges: NutrientRanges;
+  dayTarget: DayTarget;
+  /** true — средние не удалось загнать в диапазоны (честный компромисс). */
+  compromised: boolean;
+}
+
 type NormRecord = {
   kcalMin: number;
   kcalMax: number;
@@ -63,6 +84,21 @@ export function dayTargetFromNorm(norm: NormRecord): DayTarget {
     fat: mid(norm.fatMin, norm.fatMax),
     carb: mid(norm.carbMin, norm.carbMax),
     fiber: norm.fiberMin,
+  };
+}
+
+/** Диапазоны недельного среднего из нормы (тикет 15): те же min/max, что в норме. */
+export function nutrientRangesFromNorm(norm: NormRecord): NutrientRanges {
+  return {
+    kcalMin: norm.kcalMin,
+    kcalMax: norm.kcalMax,
+    proteinMin: norm.proteinMin,
+    proteinMax: norm.proteinMax,
+    fatMin: norm.fatMin,
+    fatMax: norm.fatMax,
+    carbMin: norm.carbMin,
+    carbMax: norm.carbMax,
+    fiberMin: norm.fiberMin,
   };
 }
 
@@ -158,10 +194,7 @@ export async function buildDay(
   userId: string,
   seed: number,
 ): Promise<DisplayDay | null> {
-  const norm = await prisma.nutritionProfile.findFirst({
-    where: { userId, isActive: true },
-    orderBy: { createdAt: "desc" },
-  });
+  const norm = await activeNorm(userId);
   if (!norm) return null;
 
   const { recipes, meta } = await loadRecipePool();
@@ -193,10 +226,7 @@ export async function replaceMeal(
   slot: Slot,
   seed: number,
 ): Promise<DayMeal | null> {
-  const norm = await prisma.nutritionProfile.findFirst({
-    where: { userId, isActive: true },
-    orderBy: { createdAt: "desc" },
-  });
+  const norm = await activeNorm(userId);
   if (!norm) return null;
 
   const { recipes, meta, byId } = await loadRecipePool();
@@ -204,18 +234,7 @@ export async function replaceMeal(
 
   // Восстанавливаем PlanItem'ы с КБЖУ из пула (не с клиента); неизвестные id
   // отбрасываем.
-  const items: PlanItem[] = current
-    .map((ref) => {
-      const gr = byId.get(ref.recipeId);
-      if (!gr) return null;
-      return {
-        slot: ref.slot,
-        recipeId: ref.recipeId,
-        portion: ref.portion,
-        nutrients: scalePortion(gr.perServing, ref.portion),
-      } satisfies PlanItem;
-    })
-    .filter((x): x is PlanItem => x !== null);
+  const items = rebuildItems(current, byId);
 
   const replaced = replaceDish({
     recipes,
@@ -228,4 +247,145 @@ export async function replaceMeal(
   });
   if (!replaced) return null;
   return toDayMeal(replaced, meta);
+}
+
+// ── Уровень недели (тикет 15) ────────────────────────────────────────────────
+
+const WEEK_DAYS = 7;
+
+/** Восстанавливает PlanItem'ы из клиентских ссылок с КБЖУ из пула (не с клиента). */
+function rebuildItems(
+  refs: MealRef[],
+  byId: Map<string, GeneratorRecipe>,
+): PlanItem[] {
+  return refs
+    .map((ref) => {
+      const gr = byId.get(ref.recipeId);
+      if (!gr) return null;
+      return {
+        slot: ref.slot,
+        recipeId: ref.recipeId,
+        portion: ref.portion,
+        nutrients: scalePortion(gr.perServing, ref.portion),
+      } satisfies PlanItem;
+    })
+    .filter((x): x is PlanItem => x !== null);
+}
+
+/** Проекция собранной недели ядра в форму для UI. */
+function toDisplayWeek(
+  week: GeneratedWeek,
+  meta: Map<string, RecipeMeta>,
+  dayTarget: DayTarget,
+): DisplayWeek {
+  return {
+    days: week.days.map((d) => ({
+      meals: d.items.map((it) => toDayMeal(it, meta)),
+      totals: d.totals,
+    })),
+    weeklyAverage: week.weeklyAverage,
+    ranges: week.ranges,
+    dayTarget,
+    compromised: week.compromised,
+  };
+}
+
+/** Активная норма пользователя или null. */
+async function activeNorm(userId: string) {
+  return prisma.nutritionProfile.findFirst({
+    where: { userId, isActive: true },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+/** Собирает неделю под норму пользователя. null — если норма ещё не рассчитана. */
+export async function buildWeek(
+  userId: string,
+  seed: number,
+): Promise<DisplayWeek | null> {
+  const norm = await activeNorm(userId);
+  if (!norm) return null;
+
+  const { recipes, meta } = await loadRecipePool();
+  const dayTarget = dayTargetFromNorm(norm);
+
+  const week = generateWeek({
+    recipes,
+    slots: DEFAULT_DAY_LAYOUT,
+    days: WEEK_DAYS,
+    ranges: nutrientRangesFromNorm(norm),
+    dayTarget,
+    constraints: { excludedAllergens: excludedAllergensFor(userId) },
+    seed,
+  });
+
+  return toDisplayWeek(week, meta, dayTarget);
+}
+
+/**
+ * Перегенерация одного дня недели под остаток целей (недельное среднее держится
+ * в диапазонах, прочие дни не трогаются). КБЖУ прочих дней пересчитываем из
+ * (recipeId, portion) на сервере — клиенту не доверяем.
+ */
+export async function regenerateWeekDay(
+  userId: string,
+  current: MealRef[][],
+  dayIndex: number,
+  seed: number,
+): Promise<DisplayWeek | null> {
+  const norm = await activeNorm(userId);
+  if (!norm) return null;
+
+  const { recipes, meta, byId } = await loadRecipePool();
+  const dayTarget = dayTargetFromNorm(norm);
+  const days = current.map((refs) => rebuildItems(refs, byId));
+
+  const week = regenerateDay({
+    recipes,
+    slots: DEFAULT_DAY_LAYOUT,
+    days: WEEK_DAYS,
+    ranges: nutrientRangesFromNorm(norm),
+    dayTarget,
+    constraints: { excludedAllergens: excludedAllergensFor(userId) },
+    seed,
+    current: days,
+    dayIndex,
+  });
+
+  return toDisplayWeek(week, meta, dayTarget);
+}
+
+/**
+ * Замена одного приёма (блюда) в конкретном дне недели под остаток дня. Возвращает
+ * всю пересобранную неделю или null (нет нормы/кандидатов).
+ */
+export async function replaceWeekMeal(
+  userId: string,
+  current: MealRef[][],
+  dayIndex: number,
+  slot: Slot,
+  seed: number,
+): Promise<DisplayWeek | null> {
+  const norm = await activeNorm(userId);
+  if (!norm) return null;
+
+  const { recipes, meta, byId } = await loadRecipePool();
+  const dayTarget = dayTargetFromNorm(norm);
+  const days = current.map((refs) => rebuildItems(refs, byId));
+
+  const week = replaceMealInWeek({
+    recipes,
+    slots: DEFAULT_DAY_LAYOUT,
+    days: WEEK_DAYS,
+    ranges: nutrientRangesFromNorm(norm),
+    dayTarget,
+    constraints: { excludedAllergens: excludedAllergensFor(userId) },
+    seed,
+    current: days,
+    dayIndex,
+    slot,
+  });
+  if (!week) return null;
+
+  return toDisplayWeek(week, meta, dayTarget);
 }

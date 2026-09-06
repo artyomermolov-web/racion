@@ -5,20 +5,23 @@ import { SegmentedControl } from "@/components/ios/SegmentedControl";
 import { EmptyState } from "@/components/ios/EmptyState";
 import type { NormRanges } from "@/components/NormCard";
 import { DayPlan } from "@/components/DayPlan";
-import type { DisplayDay } from "@/lib/generator";
+import { WeekPlan } from "@/components/WeekPlan";
+import type { DisplayDay, DisplayWeek } from "@/lib/generator";
 
 const OPTIONS = [
   { key: "today", label: "Сегодня" },
   { key: "week", label: "Неделя" },
 ];
 
-/** Домашний экран: норма + план дня (если собран) + пустые состояния. */
+/** Домашний экран: норма + план дня/недели (если собраны) + пустые состояния. */
 export function HomeContent({
   norm,
   day,
+  week,
 }: {
   norm: NormRanges | null;
   day: DisplayDay | null;
+  week: DisplayWeek | null;
 }) {
   const [segment, setSegment] = useState("today");
 
@@ -45,13 +48,15 @@ export function HomeContent({
               }
             />
           )
+        ) : week ? (
+          <WeekPlan initial={week} />
         ) : (
           <EmptyState
             icon="🗓️"
             title="Неделя ещё не собрана"
             description={
               norm
-                ? "Норма готова. Здесь появится план на всю неделю с меню по дням."
+                ? "Не удалось собрать неделю из базы — проверьте, что база наполнена (npm run seed)."
                 : "Как только появится норма, здесь появится план на всю неделю с меню по дням."
             }
           />

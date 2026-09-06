@@ -3,50 +3,15 @@ import { generateDay, replaceDish, DEFAULT_DAY_LAYOUT } from "./generate";
 import { PORTION_STEPS } from "./portions";
 import type { GeneratorRecipe, DayTarget, MealSlot } from "./types";
 import type { FoodNutrients } from "@/core/nutrition";
-import { INGREDIENTS, RECIPES } from "../../../prisma/seed-data";
-import { computeRecipeNutrition } from "@/core/nutrition";
-import type { Slot, Equipment, Allergen } from "./types";
+import type { Slot, Allergen } from "./types";
+import { SEED_RECIPES } from "./seed-recipes.fixture";
 
 // Сборка дня (тикет 14): жёсткие ограничения отсекают кандидатов, порции 0.25–2.0
 // под цель, замена автодополняет под остаток дня, всё детерминированно по seed.
 // Фикстура — реальный сид-набор (через ядро nutrition), чтобы тесты «на утечки»
 // шли на тех же данных, что и приложение.
 
-const bySlug = new Map(INGREDIENTS.map((i) => [i.slug, i]));
-
-/** Приводит сид-рецепт к GeneratorRecipe (КБЖУ на порцию — из состава). */
-function toGeneratorRecipe(slug: string): GeneratorRecipe {
-  const r = RECIPES.find((x) => x.slug === slug)!;
-  const components = r.items.map((it) => {
-    const ing = bySlug.get(it.ingredient)!;
-    return {
-      grams: it.grams,
-      per100: {
-        kcal: ing.kcal,
-        protein: ing.protein,
-        fat: ing.fat,
-        carb: ing.carb,
-        fiber: ing.fiber,
-        sodium: ing.sodium,
-      } as FoodNutrients,
-    };
-  });
-  const { perServing } = computeRecipeNutrition(components, r.servings);
-  // Аллергены блюда — объединение аллергенов ингредиентов.
-  const allergens = [
-    ...new Set(r.items.flatMap((it) => bySlug.get(it.ingredient)!.allergens)),
-  ] as Allergen[];
-  return {
-    id: r.slug,
-    slots: r.slots as Slot[],
-    timeMin: r.timeMin,
-    equipment: r.equipment as Equipment[],
-    allergens,
-    perServing,
-  };
-}
-
-const ALL_RECIPES: GeneratorRecipe[] = RECIPES.map((r) => toGeneratorRecipe(r.slug));
+const ALL_RECIPES: GeneratorRecipe[] = SEED_RECIPES;
 
 const TARGET: DayTarget = {
   kcal: 2000,

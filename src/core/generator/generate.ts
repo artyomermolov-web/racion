@@ -62,7 +62,7 @@ const W_CARB = 0.4;
 // близко к оптимуму по КБЖУ.
 const POOL_SIZE = 3;
 
-const NUTRIENT_KEYS: (keyof FoodNutrients)[] = [
+export const NUTRIENT_KEYS: (keyof FoodNutrients)[] = [
   "kcal",
   "protein",
   "fat",
@@ -108,9 +108,11 @@ export function sumNutrients(
 /**
  * Взвешенное нормированное отклонение спроецированного КБЖУ (running + вклад)
  * от кумулятивной цели. Меньше — лучше. Нормировка на масштаб дня делает вклад
- * нутриентов сопоставимым независимо от абсолютных величин.
+ * нутриентов сопоставимым независимо от абсолютных величин. Экспортируется —
+ * недельный слой (week.ts) считает дневное отклонение по той же формуле, чтобы
+ * веса КБЖУ жили в одном месте.
  */
-function deviation(
+export function deviation(
   projected: FoodNutrients,
   cumTarget: { kcal: number; protein: number; fat: number; carb: number },
   scale: DayTarget,
