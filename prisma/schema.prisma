@@ -1,7 +1,11 @@
-// Схема Prisma — срез 11 (каркас + вход).
-// Пока только сущности аккаунта: User + Session (тикеты 04, 08).
+// Схема Prisma — срез 12 (профиль + расчёт нормы).
+// Сущности аккаунта (User/Session, тикеты 04/08) + профиль и цели (тикет 12):
+// UserProfile (физданные, 1:1) и NutritionProfile (целевые диапазоны КБЖУ).
 // Портируемость SQLite -> PostgreSQL: смена provider + DATABASE_URL, схема без изменений.
-// Остальные сущности модели данных (тикет 04) добавляются своими тикетами (12+).
+// Enum'ы полей (sex/activityLevel/goal) хранятся строкой — SQLite не поддерживает
+// Prisma enum; допустимые значения фиксируются типами в /core/nutrition. На PostgreSQL
+// при желании заменяются на native enum без изменения данных.
+// Остальные сущности модели данных (тикет 04) добавляются своими тикетами (13+).
 
 generator client {
   provider = "prisma-client-js"
@@ -21,7 +25,60 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  sessions Session[]
+  sessions           Session[]
+  profile            UserProfile?
+  nutritionProfiles  NutritionProfile[]
+}
+
+// Физданные пользователя (1:1 к User). Основа для расчёта нормы (тикеты 04, 12).
+model UserProfile {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  sex             String // "male" | "female"
+  age             Int
+  heightCm        Float
+  weightKg        Float
+  bodyFatPct      Float? // опционально; если задан — белок по сухой массе
+  activityLevel   String // "sedentary" | "light" | "moderate" | "high"
+  goal            String // "lose" | "maintain" | "gain"
+  // День закупки (0–6, Пн–Вс). Задел под список покупок; UI появится в своём тикете.
+  shoppingWeekday Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Целевые диапазоны КБЖУ. В MVP ровно один isActive на пользователя;
+// схема поддерживает несколько (переключение — позже, тикет 04).
+model NutritionProfile {
+  id     String @id @default(cuid())
+  userId String
+  name   String @default("Моя норма")
+
+  kcalMin    Int
+  kcalMax    Int
+  proteinMin Int
+  proteinMax Int
+  fatMin     Int
+  fatMax     Int
+  carbMin    Int
+  carbMax    Int
+  fiberMin   Int
+  // Мягкие максимумы, низкий приоритет (тикет 04). В MVP не заполняются.
+  sodiumMax      Int?
+  cholesterolMax Int?
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Session {
