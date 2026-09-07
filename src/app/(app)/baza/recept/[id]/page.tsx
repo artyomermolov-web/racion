@@ -44,11 +44,13 @@ export default async function RecipePage({
 }) {
   const { id } = await params;
   const user = await requireUser();
-  const recipe = await getRecipeDetail(id);
+  const recipe = await getRecipeDetail(id, user.id);
   if (!recipe) notFound();
 
   const { perServing } = recipe;
   const preference = await getRecipePreference(user.id, recipe.id);
+  const isOwn = recipe.ownerUserId === user.id;
+  const isBase = recipe.ownerUserId === null;
 
   return (
     <>
@@ -61,6 +63,34 @@ export default async function RecipePage({
         }
       />
       <main>
+        {/* Персонализация базового рецепта (тикет 17): своя версия заменит
+            оригинал в новых планах. Для своих рецептов — управление в «Своё». */}
+        {isBase ? (
+          <div className="group">
+            <Link
+              href={`/svoe/recept/new?base=${recipe.id}`}
+              className="row"
+              style={{ display: "flex", justifyContent: "space-between", gap: 12 }}
+            >
+              <span className="grow">Персонализировать рецепт</span>
+              <span className="chev">›</span>
+            </Link>
+          </div>
+        ) : isOwn ? (
+          <div className="group">
+            <Link
+              href="/svoe"
+              className="row"
+              style={{ display: "flex", justifyContent: "space-between", gap: 12 }}
+            >
+              <span className="grow">
+                Ваш рецепт{recipe.baseRecipeId ? " (моя версия)" : ""} — управлять в «Своё»
+              </span>
+              <span className="chev">›</span>
+            </Link>
+          </div>
+        ) : null}
+
         {/* Действия предпочтений (тикет 16): избранное, блок, recurring. */}
         <div className="g-title">Ваши предпочтения</div>
         <div className="group">

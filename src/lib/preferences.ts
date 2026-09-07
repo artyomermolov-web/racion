@@ -9,6 +9,52 @@ import type { Preferences, Slot } from "@/core/generator";
 
 export type RecurringFrequency = "often" | "always";
 
+const RECURRING_FREQUENCIES: RecurringFrequency[] = ["often", "always"];
+
+/**
+ * Ставит/снимает recurring по строковому id — тумблер (повтор того же режима
+ * снимает). Общая точка для рецептов (карточка блюда) и кастом-продуктов (тикет
+ * 17): в схеме recurring живёт в одной таблице по строковому id без FK. При
+ * `unblock` установка снимает блок (взаимоисключение для рецептов; продукты блок
+ * не используют). Возвращает новый режим. Ревалидацию/проверку прав делает
+ * вызывающий — здесь только запись.
+ */
+export async function applyRecurring(
+  userId: string,
+  id: string,
+  frequency: RecurringFrequency | null,
+  opts: { unblock?: boolean } = {},
+): Promise<RecurringFrequency | null> {
+  if (frequency !== null && !RECURRING_FREQUENCIES.includes(frequency)) {
+    throw new Error(`Недопустимая частота recurring: ${frequency}`);
+  }
+  const current = await prisma.recurringRecipe.findUnique({
+    where: { userId_recipeId: { userId, recipeId: id } },
+    select: { frequency: true },
+  });
+  // Повторный клик по текущему режиму снимает recurring.
+  const target = current?.frequency === frequency ? null : frequency;
+
+  if (target === null) {
+    await prisma.recurringRecipe.deleteMany({ where: { userId, recipeId: id } });
+    return null;
+  }
+  const upsert = prisma.recurringRecipe.upsert({
+    where: { userId_recipeId: { userId, recipeId: id } },
+    create: { userId, recipeId: id, frequency: target },
+    update: { frequency: target },
+  });
+  if (opts.unblock) {
+    await prisma.$transaction([
+      prisma.blockedRecipe.deleteMany({ where: { userId, recipeId: id } }),
+      upsert,
+    ]);
+  } else {
+    await upsert;
+  }
+  return target;
+}
+
 /** Предпочтения пользователя, готовые ко входу генератора. */
 export interface LoadedPreferences {
   /** Мягкие предпочтения (избранное/recurring) для скоринга ядра. */
@@ -131,13 +177,24 @@ export async function getPreferencesOverview(
       ...recurring.map((r) => r.recipeId),
     ]),
   ];
-  const recipes = ids.length
-    ? await prisma.recipe.findMany({
-        where: { id: { in: ids } },
-        select: { id: true, name: true },
-      })
-    : [];
-  const nameById = new Map(recipes.map((r) => [r.id, r.name]));
+  // Имена берём из рецептов и (для recurring кастом-продуктов, тикет 17) продуктов —
+  // recurring хранится по строковому id, который может быть и id рецепта, и id
+  // ингредиента. Один запрос на каждую таблицу по объединению id.
+  const [recipes, products] = ids.length
+    ? await Promise.all([
+        prisma.recipe.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, name: true },
+        }),
+        prisma.ingredient.findMany({
+          where: { id: { in: ids }, isCustom: true, ownerUserId: userId },
+          select: { id: true, name: true },
+        }),
+      ])
+    : [[], []];
+  const nameById = new Map<string, string>();
+  for (const r of recipes) nameById.set(r.id, r.name);
+  for (const p of products) nameById.set(p.id, p.name);
   const name = (id: string) => nameById.get(id) ?? "Блюдо";
 
   return {

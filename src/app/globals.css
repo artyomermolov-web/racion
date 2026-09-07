@@ -1089,3 +1089,89 @@ select.input {
     transition: none;
   }
 }
+
+/* --- «Своё»: кастом-продукты, рецепты, персонализация (тикет 17) --- */
+
+/* Пометка «Своё»/«моя версия» рядом с названием. */
+.badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 100px;
+  background: var(--fill);
+  color: var(--label2);
+  font-size: 12px;
+  font-weight: 590;
+  vertical-align: middle;
+}
+
+/* Кнопка-ссылка (удалить и т.п.) без фона. */
+.linklike {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--tint);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.linklike:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.linklike.danger {
+  color: var(--danger);
+}
+
+/* Легенда группы чекбоксов (визуально как подпись поля). */
+.field-legend {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 15px;
+  color: var(--label2);
+}
+
+/* Сетка чекбоксов (аллергены, слоты, техника, диета). */
+.check-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 14px;
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+}
+.check input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--tint);
+}
+
+/* Строка ингредиента в редакторе рецепта: продукт + масса + удалить. */
+.ing-row {
+  display: grid;
+  grid-template-columns: 1fr 92px auto;
+  gap: 8px;
+  align-items: center;
+}
+.ing-grams {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.ing-grams .input {
+  padding-right: 30px;
+}
+.ing-unit {
+  position: absolute;
+  right: 10px;
+  color: var(--label2);
+  font-size: 14px;
+  pointer-events: none;
+}
+.ing-del {
+  font-size: 18px;
+  padding: 0 4px;
+}

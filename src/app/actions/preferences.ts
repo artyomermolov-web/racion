@@ -8,6 +8,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import {
+  applyRecurring,
   getRecipePreference,
   type RecipePreferenceState,
   type RecurringFrequency,
@@ -20,8 +21,6 @@ function revalidatePreferenceViews(recipeId?: string) {
   revalidatePath("/profil/vkusy");
   if (recipeId) revalidatePath(`/baza/recept/${recipeId}`);
 }
-
-const RECURRING: RecurringFrequency[] = ["often", "always"];
 
 /**
  * Переключает избранное. Избранное и блок взаимоисключающи — при добавлении в
@@ -78,38 +77,15 @@ export async function toggleBlockAction(
 
 /**
  * Устанавливает recurring-режим блюда: often, always или снятие (null). Recurring
- * несовместим с блоком — при установке снимаем блок. Идемпотентно: повторный тот
- * же режим снимает recurring (тумблер).
+ * несовместим с блоком — при установке снимаем блок (unblock). Идемпотентно:
+ * повторный тот же режим снимает recurring (тумблер, логика в `applyRecurring`).
  */
 export async function setRecurringAction(
   recipeId: string,
   frequency: RecurringFrequency | null,
 ): Promise<RecipePreferenceState> {
   const user = await requireUser();
-  if (frequency !== null && !RECURRING.includes(frequency)) {
-    throw new Error(`Недопустимая частота recurring: ${frequency}`);
-  }
-
-  const current = await prisma.recurringRecipe.findUnique({
-    where: { userId_recipeId: { userId: user.id, recipeId } },
-    select: { frequency: true },
-  });
-  // Повторный клик по текущему режиму снимает recurring.
-  const target = current?.frequency === frequency ? null : frequency;
-
-  if (target === null) {
-    await prisma.recurringRecipe.deleteMany({ where: { userId: user.id, recipeId } });
-  } else {
-    await prisma.$transaction([
-      prisma.blockedRecipe.deleteMany({ where: { userId: user.id, recipeId } }),
-      prisma.recurringRecipe.upsert({
-        where: { userId_recipeId: { userId: user.id, recipeId } },
-        create: { userId: user.id, recipeId, frequency: target },
-        update: { frequency: target },
-      }),
-    ]);
-  }
-
+  await applyRecurring(user.id, recipeId, frequency, { unblock: true });
   revalidatePreferenceViews(recipeId);
   return getRecipePreference(user.id, recipeId);
 }

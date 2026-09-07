@@ -125,6 +125,10 @@ export default async function ProfilPage() {
             <div className="grow">Вкусы и фильтры</div>
             <span className="chev">›</span>
           </Link>
+          <Link href="/svoe" className="row">
+            <div className="grow">Свои продукты и рецепты</div>
+            <span className="chev">›</span>
+          </Link>
         </div>
 
         <div className="g-title">

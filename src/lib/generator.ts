@@ -13,8 +13,11 @@ import {
   replaceMealInWeek,
   scalePortion,
   recipeKeywords,
+  resolvePersonalization,
+  productCandidates,
   DEFAULT_DAY_LAYOUT,
   type GeneratorRecipe,
+  type CustomProduct,
   type DayTarget,
   type MealSlot,
   type NutrientRanges,
@@ -26,6 +29,7 @@ import {
   type Allergen,
 } from "@/core/generator";
 import { loadPreferences, type LoadedPreferences } from "@/lib/preferences";
+import { per100ToNutrients, toRecipeComponents } from "@/lib/foodNutrients";
 
 /** Приём дня, готовый к показу: КБЖУ + название и время рецепта. */
 export interface DayMeal {
@@ -113,43 +117,52 @@ interface RecipeMeta {
 }
 
 interface RecipePool {
+  /**
+   * Кандидаты-рецепты (база + свои), персонализация уже применена: базовый
+   * рецепт вытеснен своей версией (тикет 17). Кастом-ПРОДУКТЫ сюда не входят —
+   * генератор сам их не берёт; они добавляются только как recurring в
+   * `poolForGeneration`.
+   */
   recipes: GeneratorRecipe[];
+  /** Кастом-продукты пользователя — для recurring-подмешивания в пул. */
+  customProducts: CustomProduct[];
   meta: Map<string, RecipeMeta>;
   byId: Map<string, GeneratorRecipe>;
 }
 
 /**
- * Пул кандидатов генератора из базовых рецептов: приводит состав к КБЖУ порции
- * (ядром nutrition), собирает аллергены (объединение аллергенов ингредиентов),
- * слоты, технику и время. Название/время отдельно — для показа.
+ * Пул кандидатов генератора: базовые рецепты (ownerUserId = null) + свои рецепты
+ * пользователя (кастом-рецепты и персонализации). Приводит состав к КБЖУ порции
+ * (ядром nutrition), собирает аллергены, слоты, технику и время. Персонализация
+ * применяется здесь (`resolvePersonalization`): своя версия вытесняет базовый
+ * рецепт из кандидатов. Кастом-продукты грузятся отдельно (генератор сам их не
+ * берёт) и подмешиваются как recurring в `poolForGeneration`.
  */
-async function loadRecipePool(): Promise<RecipePool> {
-  const rows = await prisma.recipe.findMany({
-    where: { ownerUserId: null },
-    include: {
-      ingredients: { include: { ingredient: { include: { allergens: true } } } },
-      slots: true,
-      equipment: true,
-    },
-  });
+async function loadRecipePool(userId: string): Promise<RecipePool> {
+  const [rows, productRows] = await Promise.all([
+    prisma.recipe.findMany({
+      where: { OR: [{ ownerUserId: null }, { ownerUserId: userId }] },
+      include: {
+        ingredients: { include: { ingredient: { include: { allergens: true } } } },
+        slots: true,
+        equipment: true,
+      },
+    }),
+    prisma.ingredient.findMany({
+      where: { isCustom: true, ownerUserId: userId },
+      include: { allergens: true },
+    }),
+  ]);
 
-  const recipes: GeneratorRecipe[] = [];
+  const merged: GeneratorRecipe[] = [];
   const meta = new Map<string, RecipeMeta>();
   const byId = new Map<string, GeneratorRecipe>();
 
   for (const r of rows) {
-    const components = r.ingredients.map((ri) => ({
-      grams: ri.grams,
-      per100: {
-        kcal: ri.ingredient.kcalPer100,
-        protein: ri.ingredient.proteinPer100,
-        fat: ri.ingredient.fatPer100,
-        carb: ri.ingredient.carbPer100,
-        fiber: ri.ingredient.fiberPer100,
-        sodium: ri.ingredient.sodiumPer100,
-      },
-    }));
-    const { perServing } = computeRecipeNutrition(components, r.servings);
+    const { perServing } = computeRecipeNutrition(
+      toRecipeComponents(r.ingredients),
+      r.servings,
+    );
     const allergens = [
       ...new Set(
         r.ingredients.flatMap((ri) => ri.ingredient.allergens.map((a) => a.allergen)),
@@ -172,13 +185,49 @@ async function loadRecipePool(): Promise<RecipePool> {
       allergens,
       perServing,
       keywords,
+      // Персонализация базового рецепта (тикет 17): baseRecipeId → вытеснение.
+      ...(r.baseRecipeId ? { baseRecipeId: r.baseRecipeId } : {}),
     };
-    recipes.push(gr);
+    merged.push(gr);
     byId.set(r.id, gr);
     meta.set(r.id, { name: r.name, timeMin: r.timeMin });
   }
 
-  return { recipes, meta, byId };
+  // Своя версия вытесняет базовый рецепт из кандидатов (тикет 17).
+  const recipes = resolvePersonalization(merged);
+
+  // Кастом-продукты: кандидаты для recurring-подмешивания. В byId/meta кладём их
+  // тоже (все), чтобы восстановление плана и показ по id работали, даже если
+  // конкретный продукт попал в план как recurring.
+  const customProducts: CustomProduct[] = productRows.map((p) => ({
+    id: p.id,
+    perServing: per100ToNutrients(p),
+    allergens: p.allergens.map((a) => a.allergen) as Allergen[],
+    keywords: recipeKeywords(p.name, [p.name], [p.group]),
+  }));
+  for (const pc of productCandidates(customProducts, customProducts.map((p) => p.id))) {
+    byId.set(pc.id, pc);
+  }
+  for (const p of productRows) meta.set(p.id, { name: p.name, timeMin: 0 });
+
+  return { recipes, customProducts, meta, byId };
+}
+
+/** id всех recurring-предпочтений (often ∪ always) — включая кастом-продукты. */
+function recurringIds(prefs: LoadedPreferences): string[] {
+  return [
+    ...(prefs.preferences.recurringOftenIds ?? []),
+    ...(prefs.preferences.recurringAlwaysIds ?? []),
+  ];
+}
+
+/**
+ * Финальный пул для генерации: рецепты (база + свои, персонализация применена)
+ * плюс кастом-продукты, отмеченные recurring. Не-recurring продукты не попадают —
+ * «генератор сам их не берёт» (тикет 17).
+ */
+function poolForGeneration(pool: RecipePool, prefs: LoadedPreferences): GeneratorRecipe[] {
+  return [...pool.recipes, ...productCandidates(pool.customProducts, recurringIds(prefs))];
 }
 
 /** Обогащает приём ядра (PlanItem) данными для показа. */
@@ -231,14 +280,14 @@ export async function buildDay(
   const norm = await activeNorm(userId);
   if (!norm) return null;
 
-  const [{ recipes, meta }, prefs] = await Promise.all([
-    loadRecipePool(),
+  const [pool, prefs] = await Promise.all([
+    loadRecipePool(userId),
     loadPreferences(userId),
   ]);
   const target = dayTargetFromNorm(norm);
 
   const day = generateDay({
-    recipes,
+    recipes: poolForGeneration(pool, prefs),
     slots: layoutFor(prefs.onlyRecurringSlots),
     target,
     constraints: constraintsFrom(userId, prefs),
@@ -247,7 +296,7 @@ export async function buildDay(
   });
 
   return {
-    meals: day.items.map((it) => toDayMeal(it, meta)),
+    meals: day.items.map((it) => toDayMeal(it, pool.meta)),
     totals: day.totals,
     target,
   };
@@ -267,18 +316,18 @@ export async function replaceMeal(
   const norm = await activeNorm(userId);
   if (!norm) return null;
 
-  const [{ recipes, meta, byId }, prefs] = await Promise.all([
-    loadRecipePool(),
+  const [pool, prefs] = await Promise.all([
+    loadRecipePool(userId),
     loadPreferences(userId),
   ]);
   const target = dayTargetFromNorm(norm);
 
   // Восстанавливаем PlanItem'ы с КБЖУ из пула (не с клиента); неизвестные id
   // отбрасываем.
-  const items = rebuildItems(current, byId);
+  const items = rebuildItems(current, pool.byId);
 
   const replaced = replaceDish({
-    recipes,
+    recipes: poolForGeneration(pool, prefs),
     slots: layoutFor(prefs.onlyRecurringSlots),
     target,
     constraints: constraintsFrom(userId, prefs),
@@ -288,7 +337,7 @@ export async function replaceMeal(
     slot,
   });
   if (!replaced) return null;
-  return toDayMeal(replaced, meta);
+  return toDayMeal(replaced, pool.meta);
 }
 
 // ── Уровень недели (тикет 15) ────────────────────────────────────────────────
@@ -348,14 +397,14 @@ export async function buildWeek(
   const norm = await activeNorm(userId);
   if (!norm) return null;
 
-  const [{ recipes, meta }, prefs] = await Promise.all([
-    loadRecipePool(),
+  const [pool, prefs] = await Promise.all([
+    loadRecipePool(userId),
     loadPreferences(userId),
   ]);
   const dayTarget = dayTargetFromNorm(norm);
 
   const week = generateWeek({
-    recipes,
+    recipes: poolForGeneration(pool, prefs),
     slots: layoutFor(prefs.onlyRecurringSlots),
     days: WEEK_DAYS,
     ranges: nutrientRangesFromNorm(norm),
@@ -365,7 +414,7 @@ export async function buildWeek(
     seed,
   });
 
-  return toDisplayWeek(week, meta, dayTarget);
+  return toDisplayWeek(week, pool.meta, dayTarget);
 }
 
 /**
@@ -382,15 +431,15 @@ export async function regenerateWeekDay(
   const norm = await activeNorm(userId);
   if (!norm) return null;
 
-  const [{ recipes, meta, byId }, prefs] = await Promise.all([
-    loadRecipePool(),
+  const [pool, prefs] = await Promise.all([
+    loadRecipePool(userId),
     loadPreferences(userId),
   ]);
   const dayTarget = dayTargetFromNorm(norm);
-  const days = current.map((refs) => rebuildItems(refs, byId));
+  const days = current.map((refs) => rebuildItems(refs, pool.byId));
 
   const week = regenerateDay({
-    recipes,
+    recipes: poolForGeneration(pool, prefs),
     slots: layoutFor(prefs.onlyRecurringSlots),
     days: WEEK_DAYS,
     ranges: nutrientRangesFromNorm(norm),
@@ -402,7 +451,7 @@ export async function regenerateWeekDay(
     dayIndex,
   });
 
-  return toDisplayWeek(week, meta, dayTarget);
+  return toDisplayWeek(week, pool.meta, dayTarget);
 }
 
 /**
@@ -419,15 +468,15 @@ export async function replaceWeekMeal(
   const norm = await activeNorm(userId);
   if (!norm) return null;
 
-  const [{ recipes, meta, byId }, prefs] = await Promise.all([
-    loadRecipePool(),
+  const [pool, prefs] = await Promise.all([
+    loadRecipePool(userId),
     loadPreferences(userId),
   ]);
   const dayTarget = dayTargetFromNorm(norm);
-  const days = current.map((refs) => rebuildItems(refs, byId));
+  const days = current.map((refs) => rebuildItems(refs, pool.byId));
 
   const week = replaceMealInWeek({
-    recipes,
+    recipes: poolForGeneration(pool, prefs),
     slots: layoutFor(prefs.onlyRecurringSlots),
     days: WEEK_DAYS,
     ranges: nutrientRangesFromNorm(norm),
@@ -441,5 +490,5 @@ export async function replaceWeekMeal(
   });
   if (!week) return null;
 
-  return toDisplayWeek(week, meta, dayTarget);
+  return toDisplayWeek(week, pool.meta, dayTarget);
 }

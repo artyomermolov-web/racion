@@ -3,11 +3,8 @@
 // здесь только доступ к данным и приведение к сериализуемым формам для UI.
 import "server-only";
 import { prisma } from "@/lib/db";
-import {
-  computeRecipeNutrition,
-  type FoodNutrients,
-  type RecipeComponent,
-} from "@/core/nutrition";
+import { computeRecipeNutrition, type FoodNutrients } from "@/core/nutrition";
+import { per100ToNutrients, toRecipeComponents } from "@/lib/foodNutrients";
 
 export interface IngredientRow {
   id: string;
@@ -17,6 +14,8 @@ export interface IngredientRow {
   /** КБЖУ + клетчатка на 100 г, натрий (мг) на 100 г. */
   per100: FoodNutrients;
   allergens: string[];
+  /** Кастом-продукт пользователя (тикет 17) — для пометки «Своё» в базе. */
+  own: boolean;
 }
 
 export interface RecipeRow {
@@ -29,6 +28,8 @@ export interface RecipeRow {
   diet: string[];
   /** КБЖУ на одну порцию (посчитано из состава). */
   perServing: FoodNutrients;
+  /** Свой рецепт пользователя (кастом/персонализация) — пометка «Своё». */
+  own: boolean;
 }
 
 export interface RecipeIngredientRow {
@@ -45,34 +46,19 @@ export interface RecipeDetail extends RecipeRow {
   allergens: string[];
   /** КБЖУ всего блюда (на все порции). */
   total: FoodNutrients;
+  /** Владелец рецепта (null = базовый) — для показа «Персонализировать»/«Своё». */
+  ownerUserId: string | null;
+  /** id базового рецепта, если это персонализация (иначе null). */
+  baseRecipeId: string | null;
 }
 
-/** Поля «на 100 г» из строки Ingredient. Общий вход для проекции нутриентов. */
-type Per100Fields = {
-  kcalPer100: number;
-  proteinPer100: number;
-  fatPer100: number;
-  carbPer100: number;
-  fiberPer100: number;
-  sodiumPer100: number;
-};
-
-/** Проекция строки продукта в нутриенты на 100 г (единая точка маппинга). */
-function rowToNutrients(r: Per100Fields): FoodNutrients {
-  return {
-    kcal: r.kcalPer100,
-    protein: r.proteinPer100,
-    fat: r.fatPer100,
-    carb: r.carbPer100,
-    fiber: r.fiberPer100,
-    sodium: r.sodiumPer100,
-  };
-}
-
-/** Все базовые продукты (ownerUserId = null), отсортированы по имени. */
-export async function getIngredients(): Promise<IngredientRow[]> {
+/**
+ * Продукты базы: базовые (ownerUserId = null) и кастом-продукты пользователя
+ * (тикет 17), отсортированы по имени. Свои помечены own.
+ */
+export async function getIngredients(userId: string): Promise<IngredientRow[]> {
   const rows = await prisma.ingredient.findMany({
-    where: { ownerUserId: null },
+    where: { OR: [{ ownerUserId: null }, { ownerUserId: userId }] },
     include: { allergens: true },
     orderBy: { name: "asc" },
   });
@@ -81,25 +67,19 @@ export async function getIngredients(): Promise<IngredientRow[]> {
     name: r.name,
     group: r.group,
     unit: r.unit,
-    per100: rowToNutrients(r),
+    per100: per100ToNutrients(r),
     allergens: r.allergens.map((a) => a.allergen),
+    own: r.ownerUserId === userId,
   }));
 }
 
-/** Составляет компоненты для ядра из состава рецепта. */
-function toComponents(
-  ingredients: { grams: number; ingredient: Per100Fields }[],
-): RecipeComponent[] {
-  return ingredients.map((ri) => ({
-    grams: ri.grams,
-    per100: rowToNutrients(ri.ingredient),
-  }));
-}
-
-/** Все базовые рецепты с посчитанным КБЖУ на порцию, отсортированы по имени. */
-export async function getRecipes(): Promise<RecipeRow[]> {
+/**
+ * Рецепты базы с посчитанным КБЖУ на порцию: базовые и свои рецепты пользователя
+ * (тикет 17), отсортированы по имени. Свои помечены own.
+ */
+export async function getRecipes(userId: string): Promise<RecipeRow[]> {
   const rows = await prisma.recipe.findMany({
-    where: { ownerUserId: null },
+    where: { OR: [{ ownerUserId: null }, { ownerUserId: userId }] },
     include: {
       ingredients: { include: { ingredient: true } },
       slots: true,
@@ -109,7 +89,7 @@ export async function getRecipes(): Promise<RecipeRow[]> {
   });
   return rows.map((r) => {
     const { perServing } = computeRecipeNutrition(
-      toComponents(r.ingredients),
+      toRecipeComponents(r.ingredients),
       r.servings,
     );
     return {
@@ -121,12 +101,16 @@ export async function getRecipes(): Promise<RecipeRow[]> {
       slots: r.slots.map((s) => s.slot),
       diet: r.dietTags.map((d) => d.tag),
       perServing,
+      own: r.ownerUserId === userId,
     };
   });
 }
 
 /** Полная карточка рецепта: состав, шаги, аллергены, КБЖУ на порцию и на блюдо. */
-export async function getRecipeDetail(id: string): Promise<RecipeDetail | null> {
+export async function getRecipeDetail(
+  id: string,
+  userId?: string,
+): Promise<RecipeDetail | null> {
   const r = await prisma.recipe.findUnique({
     where: { id },
     include: {
@@ -142,7 +126,7 @@ export async function getRecipeDetail(id: string): Promise<RecipeDetail | null> 
   if (!r) return null;
 
   const { total, perServing } = computeRecipeNutrition(
-    toComponents(r.ingredients),
+    toRecipeComponents(r.ingredients),
     r.servings,
   );
   // Аллергены блюда — объединение аллергенов ингредиентов (без повторов).
@@ -169,5 +153,8 @@ export async function getRecipeDetail(id: string): Promise<RecipeDetail | null> 
     allergens,
     perServing,
     total,
+    ownerUserId: r.ownerUserId,
+    baseRecipeId: r.baseRecipeId,
+    own: r.ownerUserId != null && r.ownerUserId === userId,
   };
 }

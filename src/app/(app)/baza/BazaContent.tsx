@@ -120,6 +120,18 @@ export function BazaContent({
           </select>
         </div>
 
+        {/* Вход в «Своё» (тикет 17): кастом-продукты, рецепты, персонализация. */}
+        <div className="group" style={{ marginBottom: 16 }}>
+          <Link
+            href="/svoe"
+            className="row"
+            style={{ display: "flex", justifyContent: "space-between", gap: 12 }}
+          >
+            <span className="grow">Своё — мои продукты и рецепты</span>
+            <span className="chev">›</span>
+          </Link>
+        </div>
+
         {empty ? (
           <EmptyState
             icon="🔍"
@@ -131,7 +143,10 @@ export function BazaContent({
             {shownRecipes.map((r) => (
               <Link key={r.id} href={`/baza/recept/${r.id}`} className="row food-row">
                 <div className="grow">
-                  <div className="food-title">{r.name}</div>
+                  <div className="food-title">
+                    {r.name}
+                    {r.own ? <span className="badge">Своё</span> : null}
+                  </div>
                   <div className="food-sub num">
                     {r.perServing.kcal} ккал · {formatTime(r.timeMin)}
                     {r.slots.length
@@ -154,7 +169,10 @@ export function BazaContent({
             {shownIngredients.map((i) => (
               <div key={i.id} className="row food-row">
                 <div className="grow">
-                  <div className="food-title">{i.name}</div>
+                  <div className="food-title">
+                    {i.name}
+                    {i.own ? <span className="badge">Своё</span> : null}
+                  </div>
                   <div className="food-sub num">
                     {i.per100.kcal} ккал · на 100 {massUnit(i.unit)}
                     {i.allergens.length
