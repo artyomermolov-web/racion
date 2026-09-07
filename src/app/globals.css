@@ -1175,3 +1175,189 @@ select.input {
   font-size: 18px;
   padding: 0 4px;
 }
+
+/* ---------- список покупок (тикет 18) ---------- */
+.shop.is-busy {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.shop-summary {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.shop-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.shop-total-rub {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.shop-total-of {
+  font-size: 14px;
+  color: var(--label2);
+}
+.shop-remaining {
+  font-size: 14px;
+  color: var(--tint);
+  font-weight: 600;
+}
+.shop-hint {
+  font-size: 13px;
+  color: var(--label2);
+  line-height: 1.35;
+}
+
+.shop-controls {
+  margin-bottom: 16px;
+}
+
+.shop-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 16px;
+  position: relative;
+}
+.shop-row + .shop-row::before {
+  content: "";
+  position: absolute;
+  left: 46px;
+  right: 0;
+  top: 0;
+  height: 0.5px;
+  background: var(--sep);
+}
+.shop-check {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding-top: 1px;
+}
+.shop-check input {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--good);
+  cursor: pointer;
+}
+.shop-main {
+  flex: 1;
+  min-width: 0;
+}
+.shop-name {
+  font-size: 16px;
+  color: var(--label);
+}
+.shop-frozen {
+  color: var(--tint);
+  font-size: 13px;
+}
+.shop-detail {
+  font-size: 13px;
+  color: var(--label2);
+  margin-top: 2px;
+  line-height: 1.35;
+}
+.shop-side {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.shop-cost {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--label);
+  white-space: nowrap;
+}
+.shop-stepper {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--fill);
+  border-radius: 8px;
+  padding: 2px;
+}
+.shop-stepper button {
+  width: 28px;
+  height: 26px;
+  border: 0;
+  background: transparent;
+  color: var(--tint);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.shop-stepper button:active {
+  background: var(--card);
+}
+.shop-stepper button:disabled {
+  color: var(--label3);
+  cursor: default;
+}
+.shop-packs {
+  min-width: 20px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--label);
+}
+
+/* Куплено: гасим строку. */
+.shop-row.is-bought .shop-name,
+.shop-row.is-bought .shop-detail {
+  text-decoration: line-through;
+  color: var(--label3);
+}
+.shop-row.is-bought .shop-cost {
+  color: var(--label3);
+}
+
+/* Компактный вид: без деталей, плотнее. */
+.shop.is-compact .shop-detail {
+  display: none;
+}
+.shop.is-compact .shop-row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  align-items: center;
+}
+
+.shop-actions {
+  margin-top: 4px;
+}
+
+/* ---------- печать ---------- */
+@media print {
+  .nav,
+  .tabbar,
+  .no-print {
+    display: none !important;
+  }
+  .app.with-tabbar {
+    padding-bottom: 0;
+    max-width: none;
+  }
+  main {
+    padding: 0 !important;
+  }
+  .group {
+    box-shadow: none;
+    border: 0.5px solid var(--sep);
+  }
+  .shop-summary {
+    border: 0;
+    padding-left: 0;
+  }
+  .shop-row {
+    break-inside: avoid;
+  }
+}

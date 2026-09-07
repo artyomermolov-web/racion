@@ -114,6 +114,10 @@ model Ingredient {
   packSize      Float
   pricePerPack  Float
   shelfLifeDays Int
+  // Масса одной штуки, г — только для штучных (unit="pcs"). Список покупок (тикет
+  // 18) переводит «граммовый эквивалент рецепта → штуки» продажи через это поле;
+  // для г/мл — null (потребность уже в единице продажи).
+  gramsPerPiece Float?
   // Кастом-продукт (тикет 04): isCustom + ownerUserId. Базовый — оба пусты.
   isCustom      Boolean @default(false)
   ownerUserId   String?

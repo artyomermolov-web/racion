@@ -22,6 +22,7 @@ async function seedIngredients() {
       packSize: ing.packSize,
       pricePerPack: ing.pricePerPack,
       shelfLifeDays: ing.shelfLifeDays,
+      gramsPerPiece: ing.gramsPerPiece ?? null,
     };
     const allergens = { create: ing.allergens.map((allergen) => ({ allergen })) };
     await prisma.ingredient.upsert({

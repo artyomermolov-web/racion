@@ -42,6 +42,8 @@ export interface SeedIngredient {
   packSize: number;
   pricePerPack: number;
   shelfLifeDays: number;
+  /** Масса одной штуки, г — только для штучных (unit="pcs"); для г/мл не задаётся. */
+  gramsPerPiece?: number;
   allergens: Allergen[];
 }
 
@@ -98,7 +100,7 @@ export const INGREDIENTS: SeedIngredient[] = [
   { slug: "yogurt", name: "Йогурт натуральный 3.2%", group: G.dairy, unit: "g", kcal: 66, protein: 5.0, fat: 3.2, carb: 3.5, fiber: 0, sodium: 50, packSize: 290, pricePerPack: 70, shelfLifeDays: 21, allergens: ["milk"] },
 
   // --- Яйца ---
-  { slug: "yaytso", name: "Яйцо куриное С1", group: G.egg, unit: "pcs", kcal: 157, protein: 12.7, fat: 11.5, carb: 0.7, fiber: 0, sodium: 134, packSize: 10, pricePerPack: 110, shelfLifeDays: 25, allergens: ["egg"] },
+  { slug: "yaytso", name: "Яйцо куриное С1", group: G.egg, unit: "pcs", kcal: 157, protein: 12.7, fat: 11.5, carb: 0.7, fiber: 0, sodium: 134, packSize: 10, pricePerPack: 110, shelfLifeDays: 25, gramsPerPiece: 55, allergens: ["egg"] },
 
   // --- Мясо и птица ---
   { slug: "kur-file", name: "Куриное филе грудки", group: G.meat, unit: "g", kcal: 113, protein: 23.5, fat: 1.9, carb: 0, fiber: 0, sodium: 60, packSize: 800, pricePerPack: 260, shelfLifeDays: 5, allergens: ["poultry"] },
