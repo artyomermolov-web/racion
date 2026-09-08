@@ -29,6 +29,7 @@ import {
   type Allergen,
 } from "@/core/generator";
 import { loadPreferences, type LoadedPreferences } from "@/lib/preferences";
+import { pantryStockIdsForUser } from "@/lib/pantry";
 import { per100ToNutrients, toRecipeComponents } from "@/lib/foodNutrients";
 
 /** Приём дня, готовый к показу: КБЖУ + название и время рецепта. */
@@ -185,6 +186,9 @@ async function loadRecipePool(userId: string): Promise<RecipePool> {
       allergens,
       perServing,
       keywords,
+      // Ингредиенты — для бонуса кладовки (тикет 19): чем больше продуктов уже
+      // дома, тем сильнее нудж к блюду.
+      ingredientIds: r.ingredients.map((ri) => ri.ingredientId),
       // Персонализация базового рецепта (тикет 17): baseRecipeId → вытеснение.
       ...(r.baseRecipeId ? { baseRecipeId: r.baseRecipeId } : {}),
     };
@@ -280,9 +284,10 @@ export async function buildDay(
   const norm = await activeNorm(userId);
   if (!norm) return null;
 
-  const [pool, prefs] = await Promise.all([
+  const [pool, prefs, pantryStockIds] = await Promise.all([
     loadRecipePool(userId),
     loadPreferences(userId),
+    pantryStockIdsForUser(userId),
   ]);
   const target = dayTargetFromNorm(norm);
 
@@ -292,6 +297,7 @@ export async function buildDay(
     target,
     constraints: constraintsFrom(userId, prefs),
     preferences: prefs.preferences,
+    pantryStockIds,
     seed,
   });
 
@@ -316,9 +322,10 @@ export async function replaceMeal(
   const norm = await activeNorm(userId);
   if (!norm) return null;
 
-  const [pool, prefs] = await Promise.all([
+  const [pool, prefs, pantryStockIds] = await Promise.all([
     loadRecipePool(userId),
     loadPreferences(userId),
+    pantryStockIdsForUser(userId),
   ]);
   const target = dayTargetFromNorm(norm);
 
@@ -332,6 +339,7 @@ export async function replaceMeal(
     target,
     constraints: constraintsFrom(userId, prefs),
     preferences: prefs.preferences,
+    pantryStockIds,
     seed,
     current: items,
     slot,
@@ -397,9 +405,10 @@ export async function buildWeek(
   const norm = await activeNorm(userId);
   if (!norm) return null;
 
-  const [pool, prefs] = await Promise.all([
+  const [pool, prefs, pantryStockIds] = await Promise.all([
     loadRecipePool(userId),
     loadPreferences(userId),
+    pantryStockIdsForUser(userId),
   ]);
   const dayTarget = dayTargetFromNorm(norm);
 
@@ -411,6 +420,7 @@ export async function buildWeek(
     dayTarget,
     constraints: constraintsFrom(userId, prefs),
     preferences: prefs.preferences,
+    pantryStockIds,
     seed,
   });
 
@@ -431,9 +441,10 @@ export async function regenerateWeekDay(
   const norm = await activeNorm(userId);
   if (!norm) return null;
 
-  const [pool, prefs] = await Promise.all([
+  const [pool, prefs, pantryStockIds] = await Promise.all([
     loadRecipePool(userId),
     loadPreferences(userId),
+    pantryStockIdsForUser(userId),
   ]);
   const dayTarget = dayTargetFromNorm(norm);
   const days = current.map((refs) => rebuildItems(refs, pool.byId));
@@ -446,6 +457,7 @@ export async function regenerateWeekDay(
     dayTarget,
     constraints: constraintsFrom(userId, prefs),
     preferences: prefs.preferences,
+    pantryStockIds,
     seed,
     current: days,
     dayIndex,
@@ -468,9 +480,10 @@ export async function replaceWeekMeal(
   const norm = await activeNorm(userId);
   if (!norm) return null;
 
-  const [pool, prefs] = await Promise.all([
+  const [pool, prefs, pantryStockIds] = await Promise.all([
     loadRecipePool(userId),
     loadPreferences(userId),
+    pantryStockIdsForUser(userId),
   ]);
   const dayTarget = dayTargetFromNorm(norm);
   const days = current.map((refs) => rebuildItems(refs, pool.byId));
@@ -483,6 +496,7 @@ export async function replaceWeekMeal(
     dayTarget,
     constraints: constraintsFrom(userId, prefs),
     preferences: prefs.preferences,
+    pantryStockIds,
     seed,
     current: days,
     dayIndex,

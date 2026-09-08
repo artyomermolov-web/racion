@@ -33,6 +33,7 @@ model User {
   recurring          RecurringRecipe[]
   keywordFilters     KeywordFilter[]
   mealSlotSettings   MealSlotSetting[]
+  pantryLots         PantryLot[]
 }
 
 // Физданные пользователя (1:1 к User). Основа для расчёта нормы (тикеты 04, 12).
@@ -295,6 +296,41 @@ model MealSlotSetting {
 
   @@unique([userId, slot])
   @@index([userId])
+}
+
+// --- Кладовка (тикет 19, модель тикета 04, решение 07) ---
+// Запас продуктов дома лотами. Два состояния строго раздельны (поле `kind`):
+//  • real    — физически дома сейчас: список покупок вычитает, генератор
+//              приоритетно использует (бонус кладовки);
+//  • pending — прогноз неподтверждённой покупки: НЕ вычитается (иначе двойной
+//              счёт), генератор не считает своим; при подтверждении покупки
+//              промотится в real.
+// ingredientId ссылается на Ingredient без FK-каскада (как recipeId в
+// предпочтениях): базовые продукты общие, а лоты привязаны к пользователю
+// (каскад по User). Снапшот покупки (замороженный список) — состояние клиента,
+// в «тонком» слое не персистится (как и сам список покупок).
+model PantryLot {
+  id           String    @id @default(cuid())
+  userId       String
+  ingredientId String
+  // Количество в единице продажи продукта (г/мл/шт), > 0.
+  qty          Float
+  // "real" | "pending" — строго раздельны (решение 07). По умолчанию real.
+  kind         String    @default("real")
+  // Срок годности; null — без срока (напр. соль). real-лоты подтверждения =
+  // дата покупки + Ingredient.shelfLifeDays.
+  expiresAt    DateTime?
+  // Источник лота (напр. "purchase") — задел под трекинг/списание (тикет 20).
+  source       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, kind])
+  @@index([ingredientId])
 }
 
 model Session {

@@ -50,6 +50,12 @@ export interface GeneratorRecipe {
    * не задан. Необязательно.
    */
   baseRecipeId?: string;
+  /**
+   * Ингредиенты рецепта (id продуктов) — для бонуса кладовки (тикет 19, decision
+   * 06 шаг 4): чем больше ингредиентов уже дома (real-запас), тем сильнее нудж к
+   * этому блюду. Необязательно (без состава бонуса кладовки нет).
+   */
+  ingredientIds?: string[];
 }
 
 /**
@@ -140,6 +146,11 @@ export interface GenerateDayInput {
   constraints: GeneratorConstraints;
   /** Мягкие предпочтения (избранное/recurring). Необязательно. */
   preferences?: Preferences;
+  /**
+   * Ингредиенты, которые уже дома (real-запас кладовки) — бонус за использование
+   * кладовки (тикет 19). Только real-лоты (pending не считается). Необязательно.
+   */
+  pantryStockIds?: string[];
   /** Seed детерминирует выбор среди близких кандидатов (для тестов и стабильности). */
   seed: number;
 }
@@ -193,6 +204,11 @@ export interface GenerateWeekInput {
   constraints: GeneratorConstraints;
   /** Мягкие предпочтения (избранное/recurring). Необязательно. */
   preferences?: Preferences;
+  /**
+   * Ингредиенты, которые уже дома (real-запас кладовки) — бонус за использование
+   * кладовки (тикет 19). Только real-лоты (pending не считается). Необязательно.
+   */
+  pantryStockIds?: string[];
   repeat?: RepeatPolicy;
   seed: number;
   /** Число итераций отжига (детерминировано). По умолчанию задаётся модулем. */

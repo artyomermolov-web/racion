@@ -1,31 +1,29 @@
 import { requireUser } from "@/lib/auth";
 import { shoppingListForCurrentWeek } from "@/lib/shopping";
+import { loadPantryView, cookFromPantry } from "@/lib/pantry";
 import { LargeTitleHeader } from "@/components/ios/LargeTitleHeader";
 import { ThemeToggle } from "@/components/ios/ThemeToggle";
-import { EmptyState } from "@/components/ios/EmptyState";
-import { PokupkiContent } from "./PokupkiContent";
+import { PokupkiScreen } from "./PokupkiScreen";
 
-/** Экран списка покупок (тикет 18). Список собирается из недельного плана. */
+/**
+ * Экран покупок (тикеты 18, 19): сегмент «Список» (проекция недельного плана за
+ * вычетом кладовки) и сегмент «Кладовка» (real-лоты дома + приготовить из дома).
+ * Список соответствует той же неделе, что видна на главной (общий стабильный seed).
+ */
 export default async function PokupkiPage() {
   const user = await requireUser();
 
-  // Список соответствует той же неделе, что видна на главной (общий стабильный
-  // seed внутри shoppingListForCurrentWeek) — список и план не расходятся.
-  const list = await shoppingListForCurrentWeek(user.id);
+  const [list, pantry, cookable] = await Promise.all([
+    shoppingListForCurrentWeek(user.id),
+    loadPantryView(user.id),
+    cookFromPantry(user.id),
+  ]);
 
   return (
     <>
       <LargeTitleHeader title="Покупки" trailing={<ThemeToggle />} />
       <main>
-        {list && list.lines.length > 0 ? (
-          <PokupkiContent initial={list} />
-        ) : (
-          <EmptyState
-            icon="🛒"
-            title="Список покупок пуст"
-            description="Когда появится план питания, список покупок соберётся сам — целыми пачками и с суммой в ₽."
-          />
-        )}
+        <PokupkiScreen initialList={list} initialPantry={pantry} initialCookable={cookable} />
       </main>
     </>
   );

@@ -35,6 +35,7 @@ import {
   zeroNutrients,
   deviation,
   preferenceBonus,
+  pantryBonus,
   isAlwaysRecurring,
   chooseScored,
   NUTRIENT_KEYS,
@@ -52,6 +53,9 @@ const W_REPEAT = 2;
 // Вес бонуса предпочтений в энергии недели (тикет 16): мягко удерживает избранное
 // и recurring often при отжиге, не перебивая приоритет КБЖУ (W_WEEK).
 const W_PREF = 1;
+// Вес бонуса кладовки в энергии недели (тикет 19): та же роль, что и W_PREF —
+// мягко тянет отжиг к домашним продуктам, не перебивая КБЖУ.
+const W_PANTRY = 1;
 // Штраф за повтор при жадном выборе (нудж прочь от уже исчерпанных, не отсев).
 const W_REPEAT_GREEDY = 3;
 
@@ -135,6 +139,7 @@ function pickForSlot(
   repeat: RepeatPolicy,
   rng: () => number,
   preferences?: Preferences,
+  pantryStockIds?: string[],
 ): Scored | null {
   if (candidates.length === 0) return null;
 
@@ -156,7 +161,8 @@ function pickForSlot(
     const score =
       deviation(projected, cumTarget, target) +
       repeatCost -
-      preferenceBonus(recipe.id, preferences);
+      preferenceBonus(recipe.id, preferences) -
+      pantryBonus(recipe, pantryStockIds);
     return { recipe, portion, score };
   });
 
@@ -177,6 +183,7 @@ function greedyDay(
   repeat: RepeatPolicy,
   rng: () => number,
   preferences?: Preferences,
+  pantryStockIds?: string[],
 ): PlanItem[] {
   const items: PlanItem[] = [];
   const usedToday = new Set<string>();
@@ -196,6 +203,7 @@ function greedyDay(
       repeat,
       rng,
       preferences,
+      pantryStockIds,
     );
     if (!chosen) continue;
     usedToday.add(chosen.recipe.id);
@@ -268,14 +276,47 @@ function preferenceEnergy(days: PlanItem[][], preferences?: Preferences): number
   return -bonus;
 }
 
-/** Полная энергия недели: диапазоны + дни + повторы + предпочтения. */
+/**
+ * Бонус кладовки по рецептам на id (тикет 19), посчитанный один раз до отжига:
+ * значение бонуса за каждый рецепт при текущем запасе дома. Пусто, если запаса
+ * нет — тогда pantry-энергия не считается вовсе.
+ */
+function pantryBonusMap(
+  recipes: GeneratorRecipe[],
+  pantryStockIds?: string[],
+): Map<string, number> {
+  const map = new Map<string, number>();
+  if (!pantryStockIds || pantryStockIds.length === 0) return map;
+  for (const r of recipes) {
+    const b = pantryBonus(r, pantryStockIds);
+    if (b > 0) map.set(r.id, b);
+  }
+  return map;
+}
+
+/**
+ * Бонус-энергия кладовки (тикет 19): сумма бонусов размещённых домашних блюд со
+ * знаком минус (наличие домашнего снижает энергию). SA мягко тянет к кладовке, не
+ * перебивая КБЖУ. Значения бонусов заранее в `bonusById` (не пересчитываем на ход).
+ */
+function pantryEnergy(days: PlanItem[][], bonusById: Map<string, number>): number {
+  if (bonusById.size === 0) return 0;
+  let bonus = 0;
+  for (const day of days) {
+    for (const it of day) bonus += bonusById.get(it.recipeId) ?? 0;
+  }
+  return -bonus;
+}
+
+/** Полная энергия недели: диапазоны + дни + повторы + предпочтения + кладовка. */
 function totalEnergy(
   days: PlanItem[][],
   ranges: NutrientRanges,
   dayTarget: DayTarget,
   repeat: RepeatPolicy,
   nDays: number,
-  preferences?: Preferences,
+  preferences: Preferences | undefined,
+  pantryById: Map<string, number>,
 ): number {
   const mean = weeklyMean(days, nDays);
   let dayE = 0;
@@ -284,7 +325,8 @@ function totalEnergy(
     W_WEEK * weekRangeEnergy(mean, ranges, dayTarget) +
     W_DAILY * dayE +
     W_REPEAT * repeatEnergy(days, repeat) +
-    W_PREF * preferenceEnergy(days, preferences)
+    W_PREF * preferenceEnergy(days, preferences) +
+    W_PANTRY * pantryEnergy(days, pantryById)
   );
 }
 
@@ -404,7 +446,16 @@ function anneal(
   const T0 = 1.0;
   const Tend = 0.01;
 
-  let energy = totalEnergy(days, input.ranges, input.dayTarget, repeat, nDays, input.preferences);
+  const pantryById = pantryBonusMap(input.recipes, input.pantryStockIds);
+  let energy = totalEnergy(
+    days,
+    input.ranges,
+    input.dayTarget,
+    repeat,
+    nDays,
+    input.preferences,
+    pantryById,
+  );
   for (let i = 0; i < maxIters; i++) {
     const T = T0 * Math.pow(Tend / T0, i / maxIters);
     const move = proposeMove(
@@ -418,7 +469,15 @@ function anneal(
       input.preferences,
     );
     if (!move) continue;
-    const next = totalEnergy(days, input.ranges, input.dayTarget, repeat, nDays, input.preferences);
+    const next = totalEnergy(
+      days,
+      input.ranges,
+      input.dayTarget,
+      repeat,
+      nDays,
+      input.preferences,
+      pantryById,
+    );
     const dE = next - energy;
     if (dE <= 0 || rng() < Math.exp(-dE / T)) {
       energy = next; // принять
@@ -505,6 +564,7 @@ export function generateWeek(input: GenerateWeekInput): GeneratedWeek {
         repeat,
         rng,
         input.preferences,
+        input.pantryStockIds,
       ),
     );
   }
@@ -571,6 +631,7 @@ export function regenerateDay(input: RegenerateDayInput): GeneratedWeek {
     repeat,
     rng,
     input.preferences,
+    input.pantryStockIds,
   );
 
   // Собираем неделю с новым днём и дожимаем ТОЛЬКО этот день отжигом при
@@ -650,6 +711,7 @@ export function replaceMealInWeek(input: ReplaceMealInWeekInput): GeneratedWeek 
     repeat,
     rng,
     input.preferences,
+    input.pantryStockIds,
   );
   if (!chosen) return null;
 

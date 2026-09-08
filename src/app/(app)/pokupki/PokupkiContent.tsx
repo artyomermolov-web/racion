@@ -1,31 +1,30 @@
 "use client";
 
-// Экран списка покупок (тикет 18). Список — проекция недельного плана: строки
-// целыми пачками с суммой ₽ и остатком по позиции. Как и план, он не персистится
-// в «тонком» слое, поэтому ручные правки и чекбоксы «куплено» живут на клиенте
-// (localStorage):
-//   • живой синк — «Пересобрать неделю» собирает свежий план и список под норму;
+// Экран списка покупок (тикеты 18, 19). Список — проекция недельного плана за
+// вычетом real-запаса кладовки: строки целыми пачками с суммой ₽ и остатком по
+// позиции. Как и план, он не персистится в «тонком» слое, поэтому ручные правки и
+// чекбоксы «куплено» живут на клиенте (localStorage):
+//   • живой синк — «Обновить из плана» собирает свежий план и список под норму;
 //   • ручная правка числа пачек ЗАМОРАЖИВАЕТ строку (не пересчитывается) до
 //     кнопки «Сбросить правки» — правило заморозки из решения 07;
 //   • чекбоксы «куплено» и режим (полный/компакт) — тоже на клиенте.
-// Кладовка (вычет запаса) — тикет 19; здесь запас всегда пуст.
+// «Подтвердить покупку» (тикет 19) переносит купленное в кладовку real-лотами и
+// показывает замороженный снапшот суммы; список сам себя обновит (запас вычтется).
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import type { ShoppingList, ShoppingLine } from "@/core/shopping";
+import type { PurchaseLineInput, PurchaseSnapshot } from "@/core/pantry";
 import { SegmentedControl } from "@/components/ios/SegmentedControl";
 import { syncShoppingListAction } from "@/app/actions/shopping";
+import { confirmPurchaseAction, type PantryRefresh } from "@/app/actions/pantry";
+import { useClientMap } from "./useClientMap";
+import { qty, unitLabel } from "./format";
 
 const OVERRIDES_KEY = "racion-shopping-overrides";
 const PURCHASED_KEY = "racion-shopping-purchased";
 
-/** Количество без хвостовых нулей: 900 → «900», 5.5 → «5.5». */
-const qty = (n: number) => Number(n.toFixed(2)).toLocaleString("ru-RU");
-
 /** ₽ целым числом с разбивкой разрядов. */
 const rub = (n: number) => Math.round(n).toLocaleString("ru-RU");
-
-/** Единица продажи для подписи: штучные — «шт», жидкости — «мл», иначе «г». */
-const unitLabel = (unit: string) => (unit === "pcs" ? "шт" : unit === "ml" ? "мл" : "г");
 
 /** Слово «пачка» в правильной форме для 1/2–4/5+ (1 пачка, 2 пачки, 5 пачек). */
 function packsWord(n: number): string {
@@ -34,24 +33,6 @@ function packsWord(n: number): string {
   if (mod10 === 1 && mod100 !== 11) return "пачка";
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return "пачки";
   return "пачек";
-}
-
-function loadMap<T>(key: string): Record<string, T> {
-  try {
-    const raw = localStorage.getItem(key);
-    if (raw) return JSON.parse(raw) as Record<string, T>;
-  } catch {
-    /* localStorage может быть недоступен */
-  }
-  return {};
-}
-
-function saveMap(key: string, map: Record<string, unknown>) {
-  try {
-    localStorage.setItem(key, JSON.stringify(map));
-  } catch {
-    /* игнорируем */
-  }
 }
 
 /** Эффективная строка: число пачек с учётом ручной правки + пересчёт остатка/₽. */
@@ -65,36 +46,30 @@ interface EffectiveLine extends ShoppingLine {
   effCost: number;
 }
 
-export function PokupkiContent({ initial }: { initial: ShoppingList }) {
-  const [list, setList] = useState<ShoppingList>(initial);
-  const [overrides, setOverrides] = useState<Record<string, number>>({});
-  const [purchased, setPurchased] = useState<Record<string, boolean>>({});
+interface Props {
+  list: ShoppingList;
+  /** Заменить список (после ре-синка с планом). */
+  onList: (list: ShoppingList) => void;
+  /** Подтверждение покупки обновило кладовку/список — прокинуть родителю. */
+  onConfirmed: (refresh: PantryRefresh) => void;
+  /** Открыть вкладку «Кладовка» (после подтверждения). */
+  onGoToPantry: () => void;
+}
+
+export function PokupkiContent({ list, onList, onConfirmed, onGoToPantry }: Props) {
+  const [overrides, persistOverrides, overridesReady] = useClientMap<number>(OVERRIDES_KEY);
+  const [purchased, persistPurchased, purchasedReady] = useClientMap<boolean>(PURCHASED_KEY);
+  const mounted = overridesReady && purchasedReady;
   const [compact, setCompact] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const [snapshot, setSnapshot] = useState<PurchaseSnapshot | null>(null);
   const [pending, startTransition] = useTransition();
-
-  // Ручные правки и чекбоксы читаем после монтирования (как ThemeToggle) —
-  // серверный рендер идёт без них, гидрация совпадает.
-  useEffect(() => {
-    setOverrides(loadMap<number>(OVERRIDES_KEY));
-    setPurchased(loadMap<boolean>(PURCHASED_KEY));
-    setMounted(true);
-  }, []);
-
-  const persistOverrides = (next: Record<string, number>) => {
-    setOverrides(next);
-    saveMap(OVERRIDES_KEY, next);
-  };
-  const persistPurchased = (next: Record<string, boolean>) => {
-    setPurchased(next);
-    saveMap(PURCHASED_KEY, next);
-  };
 
   /** Обновить из плана: ре-синк с текущей неделей (не-замороженные строки). */
   const sync = () => {
+    setSnapshot(null);
     startTransition(async () => {
       const fresh = await syncShoppingListAction();
-      if (fresh) setList(fresh);
+      if (fresh) onList(fresh);
     });
   };
 
@@ -134,6 +109,28 @@ export function PokupkiContent({ initial }: { initial: ShoppingList }) {
     return { lines: eff, total, remaining, boughtCount, editsCount };
   }, [list, overrides, purchased]);
 
+  /** Подтвердить покупку: переносим купленное в кладовку, показываем снапшот. */
+  const confirm = () => {
+    const payload: PurchaseLineInput[] = lines
+      .filter((l) => l.effectivePacks > 0)
+      .map((l) => ({
+        ingredientId: l.ingredientId,
+        name: l.name,
+        packsBought: l.effectivePacks,
+        packSize: l.packSize,
+        pricePerPack: l.pricePerPack,
+      }));
+    if (payload.length === 0) return;
+    startTransition(async () => {
+      const { snapshot, refresh } = await confirmPurchaseAction(payload);
+      // Купленное уехало в кладовку — правки/чекбоксы больше не актуальны.
+      persistOverrides({});
+      persistPurchased({});
+      setSnapshot(snapshot);
+      onConfirmed(refresh);
+    });
+  };
+
   // Секции по группе продуктов (строки уже отсортированы ядром по группе+имени).
   const sections = useMemo(() => {
     const out: { group: string; lines: EffectiveLine[] }[] = [];
@@ -145,8 +142,25 @@ export function PokupkiContent({ initial }: { initial: ShoppingList }) {
     return out;
   }, [lines]);
 
+  const hasBuyable = lines.some((l) => l.effectivePacks > 0);
+
   return (
     <div className={`shop${compact ? " is-compact" : ""}${pending ? " is-busy" : ""}`}>
+      {/* Снапшот последнего подтверждения — заморожен, не меняется при смене цен. */}
+      {snapshot ? (
+        <div className="group pantry-snapshot">
+          <div className="pantry-snapshot-title">Покупка подтверждена</div>
+          <div className="pantry-snapshot-sum num">{rub(snapshot.totalCost)} ₽</div>
+          <div className="shop-hint">
+            {snapshot.lines.length} поз. перенесено в кладовку. Сумма зафиксирована и
+            не изменится при смене цен.
+          </div>
+          <button type="button" className="btn tinted no-print" onClick={onGoToPantry}>
+            Открыть кладовку
+          </button>
+        </div>
+      ) : null}
+
       {/* Сводка: итог ₽ и остаток к покупке + режим просмотра. */}
       <div className="group shop-summary">
         <div className="shop-total">
@@ -160,8 +174,8 @@ export function PokupkiContent({ initial }: { initial: ShoppingList }) {
           <div className="shop-remaining num">Осталось купить: {rub(remaining)} ₽</div>
         ) : null}
         <div className="shop-hint">
-          Список собран из плана недели целыми пачками. Правка числа пачек
-          замораживает позицию до сброса.
+          Список собран из плана недели целыми пачками за вычетом кладовки. Правка
+          числа пачек замораживает позицию до сброса.
         </div>
       </div>
 
@@ -258,8 +272,16 @@ export function PokupkiContent({ initial }: { initial: ShoppingList }) {
         >
           Печать
         </button>
-        <button type="button" className="btn" onClick={sync} disabled={pending}>
+        <button
+          type="button"
+          className="btn gray"
+          onClick={sync}
+          disabled={pending}
+        >
           {pending ? "Обновляем…" : "Обновить из плана"}
+        </button>
+        <button type="button" className="btn" onClick={confirm} disabled={pending || !hasBuyable}>
+          Подтвердить покупку
         </button>
       </div>
     </div>

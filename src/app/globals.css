@@ -1335,6 +1335,65 @@ select.input {
   margin-top: 4px;
 }
 
+/* ---------- кладовка (тикет 19) ---------- */
+.pantry-snapshot {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pantry-snapshot-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--good);
+}
+.pantry-snapshot-sum {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.pantry-snapshot .btn {
+  margin-top: 6px;
+  margin-bottom: 0;
+}
+/* Бейдж pending-лота (прогноз ещё не подтверждённой покупки). */
+.pantry-badge {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--label2);
+  background: var(--fill);
+  border-radius: 6px;
+  padding: 1px 6px;
+  vertical-align: 1px;
+}
+/* Срок годности: цвет по срочности. */
+.pantry-exp.is-ok {
+  color: var(--label2);
+}
+.pantry-exp.is-soon {
+  color: var(--f);
+  font-weight: 600;
+}
+.pantry-exp.is-warn {
+  color: var(--danger);
+  font-weight: 600;
+}
+.pantry-remove {
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px 2px;
+}
+.pantry-remove:disabled {
+  color: var(--label3);
+  cursor: default;
+}
+
 /* ---------- печать ---------- */
 @media print {
   .nav,

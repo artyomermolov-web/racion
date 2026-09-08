@@ -74,6 +74,14 @@ const POOL_SIZE = 3;
 const FAVORITE_BONUS = 0.15;
 const RECURRING_OFTEN_BONUS = 0.3;
 
+// Бонус кладовки (тикет 19, decision 06 шаг 4: «приоритет кладовки»). За каждый
+// ингредиент рецепта, уже имеющийся дома (real-запас), вычитаем из скоринга
+// небольшую величину — при прочих равных берётся домашнее блюдо. Суммарный бонус
+// ограничен потолком, чтобы «много домашних ингредиентов» не перебивало КБЖУ
+// (приоритет В2: КБЖУ > разнообразие > экономия).
+const PANTRY_BONUS_PER_INGREDIENT = 0.12;
+const PANTRY_BONUS_CAP = 0.5;
+
 export const NUTRIENT_KEYS: (keyof FoodNutrients)[] = [
   "kcal",
   "protein",
@@ -186,6 +194,25 @@ export function isAlwaysRecurring(id: string, preferences?: Preferences): boolea
 }
 
 /**
+ * Бонус кладовки для рецепта (тикет 19): вычитается из скоринга. Растёт с числом
+ * ингредиентов рецепта, уже имеющихся дома (real-запас), но ограничен потолком —
+ * мягкий нудж к домашнему, не перебивающий КБЖУ. Экспортируется — недельный слой
+ * (week.ts) применяет ту же величину. Без состава или без запаса — 0.
+ */
+export function pantryBonus(
+  recipe: GeneratorRecipe,
+  pantryStockIds?: readonly string[],
+): number {
+  if (!pantryStockIds || pantryStockIds.length === 0) return 0;
+  const ids = recipe.ingredientIds;
+  if (!ids || ids.length === 0) return 0;
+  const stock = new Set(pantryStockIds);
+  let count = 0;
+  for (const id of ids) if (stock.has(id)) count++;
+  return Math.min(count * PANTRY_BONUS_PER_INGREDIENT, PANTRY_BONUS_CAP);
+}
+
+/**
  * Лучший (кандидат, порция) для слота под заданную «долю-цель» приёма и
  * накопленный КБЖУ. Порцию берём под ккал-цель приёма, затем среди кандидатов
  * ранжируем по кумулятивному отклонению; seed выбирает одного из POOL_SIZE
@@ -199,6 +226,7 @@ function pickForSlot(
   target: DayTarget,
   rng: () => number,
   preferences?: Preferences,
+  pantryStockIds?: string[],
 ): Scored | null {
   if (candidates.length === 0) return null;
 
@@ -216,7 +244,9 @@ function pickForSlot(
     const projected = zeroNutrients();
     for (const k of NUTRIENT_KEYS) projected[k] = running[k] + contrib[k];
     const score =
-      deviation(projected, cumTarget, target) - preferenceBonus(recipe.id, preferences);
+      deviation(projected, cumTarget, target) -
+      preferenceBonus(recipe.id, preferences) -
+      pantryBonus(recipe, pantryStockIds);
     return { recipe, portion, score };
   });
 
@@ -239,7 +269,7 @@ function toItem(slot: MealSlot, chosen: Scored): PlanItem {
  * внутри дня. Детерминировано при фиксированном seed.
  */
 export function generateDay(input: GenerateDayInput): GeneratedDay {
-  const { recipes, slots, target, constraints, preferences, seed } = input;
+  const { recipes, slots, target, constraints, preferences, pantryStockIds, seed } = input;
   const rng = mulberry32(seed);
 
   const items: PlanItem[] = [];
@@ -259,6 +289,7 @@ export function generateDay(input: GenerateDayInput): GeneratedDay {
       target,
       rng,
       preferences,
+      pantryStockIds,
     );
     if (!chosen) continue; // нет кандидатов на слот — пропускаем (редко на сид-базе)
     used.add(chosen.recipe.id);
@@ -283,7 +314,8 @@ export interface ReplaceDishInput extends GenerateDayInput {
  * дырам в дне (слот без кандидатов). Детерминировано при фиксированном seed.
  */
 export function replaceDish(input: ReplaceDishInput): PlanItem | null {
-  const { recipes, slots, target, constraints, preferences, seed, current, slot } = input;
+  const { recipes, slots, target, constraints, preferences, pantryStockIds, seed, current, slot } =
+    input;
   const mealSlot = slots.find((s) => s.slot === slot);
   if (!mealSlot) return null;
   const rng = mulberry32(seed);
@@ -308,7 +340,16 @@ export function replaceDish(input: ReplaceDishInput): PlanItem | null {
   };
 
   // Цель слота — весь остаток (доля = 1): кумулятивная цель совпадает со слотовой.
-  const chosen = pickForSlot(candidates, zeroNutrients(), 1, 1, remaining, rng, preferences);
+  const chosen = pickForSlot(
+    candidates,
+    zeroNutrients(),
+    1,
+    1,
+    remaining,
+    rng,
+    preferences,
+    pantryStockIds,
+  );
   if (!chosen) return null;
   return toItem(mealSlot, chosen);
 }

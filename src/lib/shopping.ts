@@ -5,6 +5,7 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import { buildWeek } from "@/lib/generator";
+import { realOnHandForUser } from "@/lib/pantry";
 import { hashString } from "@/core/generator";
 import {
   buildShoppingList,
@@ -87,9 +88,16 @@ export function currentWeekSeed(userId: string): number {
   return hashString(userId + dateKey + "week");
 }
 
-/** Список покупок для пользователя за текущую неделю. null — если нормы ещё нет. */
+/**
+ * Список покупок для пользователя за текущую неделю. null — если нормы ещё нет.
+ * Из потребности вычитается real-запас кладовки (тикет 19): список покупает лишь
+ * недостающее. Pending-лоты НЕ вычитаются (иначе двойной счёт, решение 07).
+ */
 export async function shoppingListForCurrentWeek(userId: string): Promise<ShoppingList | null> {
-  const week = await buildWeek(userId, currentWeekSeed(userId));
+  const [week, onHand] = await Promise.all([
+    buildWeek(userId, currentWeekSeed(userId)),
+    realOnHandForUser(userId),
+  ]);
   if (!week) return null;
-  return buildShoppingListForPlan(planItemsFromWeek(week.days));
+  return buildShoppingListForPlan(planItemsFromWeek(week.days), onHand);
 }
