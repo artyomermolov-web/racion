@@ -4,7 +4,7 @@
 
 **Blocked by:** 18
 
-**Status:** ready-for-human
+**Status:** resolved
 
 Опирается на решения: 06, 07.
 

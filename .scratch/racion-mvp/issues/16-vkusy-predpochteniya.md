@@ -4,7 +4,7 @@
 
 **Blocked by:** 15
 
-**Status:** ready-for-human
+**Status:** resolved
 
 Опирается на решения: 06. Наполняет предпочтения (Favorite/Block/RecurringFood/KeywordFilter), которые генератор уже умеет принимать.
 
