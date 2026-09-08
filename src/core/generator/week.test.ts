@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { generateWeek, regenerateDay, replaceMealInWeek } from "./week";
+import { generateWeek, regenerateDay, replaceMealInWeek, FIBER_SOFT_TOLERANCE } from "./week";
 import { DEFAULT_DAY_LAYOUT } from "./generate";
 import { PORTION_STEPS } from "./portions";
 import type {
@@ -114,7 +114,9 @@ describe("generateWeek — недельные средние в диапазон
       expect(within(a.protein, RANGES.proteinMin, RANGES.proteinMax)).toBe(true);
       expect(within(a.fat, RANGES.fatMin, RANGES.fatMax)).toBe(true);
       expect(within(a.carb, RANGES.carbMin, RANGES.carbMax)).toBe(true);
-      expect(a.fiber).toBeGreaterThanOrEqual(RANGES.fiberMin);
+      // Клетчатка — мягкий минимум: на реалистичной базе среднее держится у цели,
+      // допуская недобор в пределах FIBER_SOFT_TOLERANCE при идеальных макросах.
+      expect(a.fiber).toBeGreaterThanOrEqual(RANGES.fiberMin - FIBER_SOFT_TOLERANCE);
       expect(week.compromised).toBe(false);
     }
   });

@@ -61,6 +61,13 @@ const W_REPEAT_GREEDY = 3;
 
 const POOL_SIZE = 3;
 const DEFAULT_DAYS = 7;
+// Клетчатка — мягкий минимум (kbju-master; в отжиге это minPenalty, а не жёсткий
+// rangePenalty). Вердикт `compromised` тоже трактует её мягко: небольшой недобор
+// в пределах допуска при выполненных ЖЁСТКИХ коридорах КБЖУ (ккал/Б/Ж/У) не
+// помечает неделю неудачной — иначе на реалистичной базе (тикет 21, ~60 рецептов)
+// пользователь видел бы ложное предупреждение из-за 1–2 г клетчатки при идеальных
+// макросах. Грубый недобор (> допуска) неделю по-прежнему компрометирует.
+export const FIBER_SOFT_TOLERANCE = 3;
 const DEFAULT_MAX_PER_WINDOW = 2;
 const DEFAULT_MAX_ITERATIONS = 3000;
 const DEFAULT_TIME_BUDGET_MS = 1800;
@@ -512,7 +519,8 @@ function summarize(
     weeklyAverage.fat <= ranges.fatMax &&
     weeklyAverage.carb >= ranges.carbMin &&
     weeklyAverage.carb <= ranges.carbMax &&
-    weeklyAverage.fiber >= ranges.fiberMin;
+    // Клетчатка — мягкий минимум с допуском (см. FIBER_SOFT_TOLERANCE).
+    weeklyAverage.fiber >= ranges.fiberMin - FIBER_SOFT_TOLERANCE;
 
   return { weeklyAverage, compromised: !within };
 }
