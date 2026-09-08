@@ -25,7 +25,9 @@ COPY --from=build /app/public ./public
 COPY --from=build /app/prisma ./prisma
 COPY package.json next.config.mjs tsconfig.json ./
 EXPOSE 3000
-# На старте: сгенерировать клиента под целевую БД, создать/обновить схему
-# (prisma db push — не зависит от диалекта миграций) и наполнить каталог
-# (идемпотентный сид). Затем поднять сервер.
+# На старте: сгенерировать клиента под целевую БД, создать/обновить схему и
+# наполнить каталог (идемпотентный сид), затем поднять сервер. Используем
+# `db push`, а не `migrate deploy` из решения 10: миграции в prisma/migrations —
+# в диалекте SQLite и не воспроизводятся на Postgres; db push разворачивает
+# провайдер-независимую схему напрямую (подробнее — в README).
 CMD ["sh", "-c", "npx prisma generate && npx prisma db push --skip-generate && npm run seed && npm run start"]

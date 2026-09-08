@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { INGREDIENTS, RECIPES } from "../../../prisma/seed-data";
-import type { Allergen, Slot, Unit } from "../../../prisma/seed-data";
+import type { Allergen, DietTag, Slot, Unit } from "../../../prisma/seed-data";
 
 // Полнота стартового каталога (тикет 21): база наполнена целиком —
 // ~211 продуктов из research/products-ru.md и 60–80 собственных рецептов.
@@ -8,6 +8,8 @@ import type { Allergen, Slot, Unit } from "../../../prisma/seed-data";
 // единицы/аллергены, ссылочная целостность рецептов, покрытие по слотам.
 // Правдоподобность КБЖУ каждого рецепта проверяет recipe.test.ts.
 
+// Списки валидных значений зеркалят union-типы из seed-data.ts (SQLite не хранит
+// enum'ы — набор фиксируется типами). При добавлении члена union обнови и здесь.
 const VALID_UNITS: Unit[] = ["g", "ml", "pcs"];
 const VALID_ALLERGENS: Allergen[] = [
   "milk",
@@ -125,7 +127,7 @@ describe("каталог рецептов", () => {
   });
 
   it("есть вегетарианские, веганские и пескетарианские варианты", () => {
-    const withTag = (tag: string) => RECIPES.filter((r) => r.diet.includes(tag as never)).length;
+    const withTag = (tag: DietTag) => RECIPES.filter((r) => r.diet.includes(tag)).length;
     expect(withTag("vegetarian"), "мало вегетарианских").toBeGreaterThanOrEqual(8);
     expect(withTag("vegan"), "мало веганских").toBeGreaterThanOrEqual(4);
     expect(withTag("pescatarian"), "мало пескетарианских").toBeGreaterThanOrEqual(3);

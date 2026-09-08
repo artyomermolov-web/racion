@@ -38,6 +38,14 @@ function isCacheable(resp) {
   return resp && resp.ok && !resp.redirected && resp.type === "basic";
 }
 
+// Держим runtime-кэш ограниченным: последние MAX_RUNTIME страниц-планов.
+// keys() отдаёт записи в порядке добавления, поэтому старейшие — в начале.
+const MAX_RUNTIME = 12;
+async function trimRuntime(cache) {
+  const keys = await cache.keys();
+  for (let i = 0; i < keys.length - MAX_RUNTIME; i++) await cache.delete(keys[i]);
+}
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
@@ -57,17 +65,23 @@ self.addEventListener("fetch", (event) => {
         .then((resp) => {
           if (isCacheable(resp)) {
             const copy = resp.clone();
-            caches.open(RUNTIME_CACHE).then((c) => c.put(request, copy));
+            caches.open(RUNTIME_CACHE).then(async (c) => {
+              await c.put(request, copy);
+              await trimRuntime(c);
+            });
           }
           return resp;
         })
         .catch(async () => {
+          // Офлайн: сперва эта же страница, иначе — САМЫЙ СВЕЖИЙ сохранённый план
+          // (последняя запись в порядке добавления), иначе экран входа.
           const cached = await caches.match(request);
           if (cached) return cached;
           const runtime = await caches.open(RUNTIME_CACHE);
-          const lastPlan = (await runtime.keys())[0];
-          if (lastPlan) {
-            const r = await runtime.match(lastPlan);
+          const keys = await runtime.keys();
+          const newest = keys[keys.length - 1];
+          if (newest) {
+            const r = await runtime.match(newest);
             if (r) return r;
           }
           return caches.match("/login");
