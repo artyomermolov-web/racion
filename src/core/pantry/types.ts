@@ -93,3 +93,74 @@ export interface CookableRecipe {
   /** Максимум целых порций, доступных из real-запаса (≥ 1). */
   servings: number;
 }
+
+// ── Списание по факту «съел» (тикет 20, решение 07) ──────────────────────────
+
+/** Потребность в списании: сколько единицы продажи одного продукта нужно взять. */
+export interface ConsumeDemand {
+  ingredientId: string;
+  /** Количество в единице продажи (г/мл/шт), > 0. */
+  qty: number;
+}
+
+/**
+ * Отбор из одного лота: сколько единицы продажи взято. Слой данных применяет
+ * `qty` к лоту (уменьшает запас) и сохраняет отбор — чтобы снятие отметки «съел»
+ * вернуло РОВНО столько же в тот же лот (обратимость, решение по тикету 20).
+ * Сохраняем `ingredientId`/`expiresAt` — на случай пересоздания лота при возврате,
+ * если исходный лот к тому моменту удалён вручную.
+ */
+export interface LotDraw {
+  lotId: string;
+  ingredientId: string;
+  /** Взято из лота (единица продажи), > 0. */
+  qty: number;
+  /** Срок годности лота на момент списания (ISO yyyy-mm-dd) или null. */
+  expiresAt: string | null;
+}
+
+/** Результат FIFO-списания: отборы по лотам и непокрытый остаток по продуктам. */
+export interface ConsumeResult {
+  /** Отборы по лотам в порядке FIFO (по сроку годности). */
+  draws: LotDraw[];
+  /**
+   * Непокрытая потребность по ingredientId (запаса не хватило), > 0. Списание «по
+   * факту» берёт сколько есть; недостача не блокирует отметку «съел».
+   */
+  shortfall: Record<string, number>;
+}
+
+/** Один приём как основание для списания (recipe + порция + едоки). */
+export interface TrackedMeal {
+  /** Стабильный клиентский ключ приёма — против двойного списания (решение 07). */
+  key: string;
+  recipeId: string;
+  /** Множитель порции (0.25–2.0). */
+  portion: number;
+  /** Число едоков (≥1). По умолчанию 1. */
+  people?: number;
+}
+
+/** Рецепт для разворота в потребность списания — та же форма, что в /core/shopping. */
+export type WriteOffRecipe = import("../shopping").ShoppingRecipe;
+
+export interface WriteOffMealInput {
+  meal: TrackedMeal;
+  /**
+   * Guard решения 07: списание этого приёма УЖЕ применено (по ключу). true →
+   * ничего не списываем повторно. Состояние живёт в слое данных (MealWriteOff),
+   * сюда приходит уже вычисленным — ядро остаётся чистым и детерминированным.
+   */
+  alreadyApplied: boolean;
+  /** Состав рецепта в единице продажи (граммы→шт переводит слой данных). */
+  recipe: WriteOffRecipe;
+  /** Real-лоты пользователя (списываем только из них; pending не трогаем). */
+  realLots: readonly PantryLot[];
+}
+
+export interface WriteOffMealResult {
+  /** false — guard заблокировал (уже списано) либо списывать нечего. */
+  apply: boolean;
+  draws: LotDraw[];
+  shortfall: Record<string, number>;
+}

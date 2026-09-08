@@ -23,8 +23,13 @@ import type {
 // лишней пачки. Реальный «чуть больше пачки» на порядки крупнее допуска.
 const EPS = 1e-9;
 
-/** Множитель потребности одного приёма: порция, делённая на порций рецепта, × едоки. */
-function itemFactor(portion: number, servings: number, people?: number): number {
+/**
+ * Множитель потребности одного приёма: порция, делённая на порций рецепта, × едоки.
+ * Экспортируется — списание кладовки (тикет 20, `/core/pantry`) разворачивает приём
+ * в потребность ТОЙ ЖЕ формулой, чтобы «сколько купить» и «сколько списать»
+ * никогда не разошлись (решение 07: без двойного вычитания).
+ */
+export function itemFactor(portion: number, servings: number, people?: number): number {
   const s = servings >= 1 ? servings : 1;
   const p = people && people >= 1 ? people : 1;
   return (portion / s) * p;

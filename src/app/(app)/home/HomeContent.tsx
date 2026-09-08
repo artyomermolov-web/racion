@@ -18,10 +18,16 @@ export function HomeContent({
   norm,
   day,
   week,
+  dateKey,
+  eatenKeys,
 }: {
   norm: NormRanges | null;
   day: DisplayDay | null;
   week: DisplayWeek | null;
+  /** Дата дня (yyyy-mm-dd) — для стабильных ключей приёмов (трекинг, тикет 20). */
+  dateKey: string;
+  /** Ключи приёмов, уже отмеченных съеденными — для восстановления отметок. */
+  eatenKeys: string[];
 }) {
   const [segment, setSegment] = useState("today");
 
@@ -36,7 +42,7 @@ export function HomeContent({
       <main>
         {segment === "today" ? (
           day ? (
-            <DayPlan initial={day} />
+            <DayPlan initial={day} dateKey={dateKey} eatenKeys={eatenKeys} />
           ) : (
             <EmptyState
               icon="🍽️"

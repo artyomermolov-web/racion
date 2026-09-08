@@ -353,3 +353,92 @@ export function replaceDish(input: ReplaceDishInput): PlanItem | null {
   if (!chosen) return null;
   return toItem(mealSlot, chosen);
 }
+
+export interface RegenerateRemainderInput extends GenerateDayInput {
+  /** Текущие приёмы дня (по одному на слот). */
+  current: PlanItem[];
+  /**
+   * Слоты со СЪЕДЕННЫМИ приёмами — их фиксируем как есть (списание кладовки уже
+   * применено, трогать нельзя). Остальные слоты пересобираем.
+   */
+  lockedSlots: Slot[];
+  /**
+   * КБЖУ уже съеденного ВНЕ раскладки (приёмы, добавленные из поиска). Входит в
+   * накопленный КБЖУ, чтобы остаток дня считался от полной съеденной суммы, но не
+   * занимает слот. Необязательно (по умолчанию — нули).
+   */
+  consumedBaseline?: FoodNutrients;
+  /**
+   * Рецепты уже съеденного вне раскладки — чтобы не повторять их в
+   * перегенерированных слотах. Необязательно.
+   */
+  consumedRecipeIds?: string[];
+}
+
+/**
+ * Перегенерирует НЕсъеденные приёмы дня под ОСТАТОЧНЫЕ цели (тикет 20): съеденные
+ * приёмы (lockedSlots) остаются зафиксированными, а прочие слоты пересобираются
+ * жадно так, чтобы СУММА дня (съеденное + новое) тянулась к дневной цели. Идём по
+ * слотам в порядке раскладки: съеденные входят в накопленный КБЖУ и в «уже занятые
+ * блюда» (не повторяем их), под несъеденные подбираем свежее блюдо тем же
+ * скорингом, что и generateDay. Детерминировано при фиксированном seed.
+ *
+ * Слоты, ОТСУТСТВУЮЩИЕ в `current`, не воскрешаются: если приём удалён («удалить
+ * несъеденное», тикет 20) — его слот пропускается, и доля этого слота НЕ идёт в
+ * накопленную цель. Так пропуск приёма честно снижает дневной остаток (удалил обед
+ * → день целится примерно в свою долю без обеда), а удаление переживает
+ * перегенерацию. Слот адресуется по имени — устойчиво к дырам.
+ */
+export function regenerateDayRemainder(input: RegenerateRemainderInput): GeneratedDay {
+  const { recipes, slots, target, constraints, preferences, pantryStockIds, seed, current } = input;
+  const rng = mulberry32(seed);
+  const locked = new Set(input.lockedSlots);
+  const currentBySlot = new Map(current.map((it) => [it.slot, it]));
+  const baseline = input.consumedBaseline ?? zeroNutrients();
+
+  const items: PlanItem[] = [];
+  // Съеденное вне раскладки не повторяем в новых слотах (но в items не кладём).
+  const used = new Set<string>(input.consumedRecipeIds ?? []);
+  let cumShare = 0;
+
+  for (const slot of slots) {
+    const kept = currentBySlot.get(slot.slot);
+    if (!kept) continue; // приём слота удалён/отсутствует — не воскрешаем
+    cumShare += slot.kcalShare; // долю считаем только по сохранённым слотам
+
+    // Съеденный слот — фиксируем сохранённый приём, он входит в накопление и used.
+    if (locked.has(slot.slot)) {
+      used.add(kept.recipeId);
+      items.push(kept);
+      continue;
+    }
+
+    // Несъеденный слот — подбираем свежее блюдо под остаток цели (running с учётом
+    // уже зафиксированных съеденных приёмов + съеденного вне раскладки). Исключаем
+    // уже занятые блюда.
+    const candidates = filterCandidates(recipes, slot, constraints, preferences).filter(
+      (r) => !used.has(r.id),
+    );
+    const running = sumNutrients([{ nutrients: baseline }, ...items]);
+    const chosen = pickForSlot(
+      candidates,
+      running,
+      slot.kcalShare,
+      cumShare,
+      target,
+      rng,
+      preferences,
+      pantryStockIds,
+    );
+    if (!chosen) {
+      // Нет кандидатов на замену — оставляем текущий приём, а не теряем слот.
+      used.add(kept.recipeId);
+      items.push(kept);
+      continue;
+    }
+    used.add(chosen.recipe.id);
+    items.push(toItem(slot, chosen));
+  }
+
+  return { items, totals: sumNutrients(items), target };
+}

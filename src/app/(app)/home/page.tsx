@@ -1,6 +1,7 @@
 import { requireUser } from "@/lib/auth";
 import { getProfileData } from "@/lib/profile";
 import { buildDay, buildWeek } from "@/lib/generator";
+import { eatenKeysForUser } from "@/lib/track";
 import { hashString } from "@/core/generator";
 import { LargeTitleHeader } from "@/components/ios/LargeTitleHeader";
 import { ThemeToggle } from "@/components/ios/ThemeToggle";
@@ -26,12 +27,13 @@ export default async function HomePage() {
   // кнопке (тикет 06 шаг 9). Сборка возвращает null, если норма не рассчитана.
   // Неделя получает свой seed-суффикс, чтобы не повторять день-в-день.
   const dateKey = new Date().toISOString().slice(0, 10);
-  const [day, week] = norm
+  const [day, week, eatenKeys] = norm
     ? await Promise.all([
         buildDay(user.id, hashString(user.id + dateKey)),
         buildWeek(user.id, hashString(user.id + dateKey + "week")),
+        eatenKeysForUser(user.id),
       ])
-    : [null, null];
+    : [null, null, [] as string[]];
 
   return (
     <>
@@ -40,7 +42,13 @@ export default async function HomePage() {
         subtitle={todayLabel()}
         trailing={<ThemeToggle />}
       />
-      <HomeContent norm={norm} day={day} week={week} />
+      <HomeContent
+        norm={norm}
+        day={day}
+        week={week}
+        dateKey={dateKey}
+        eatenKeys={eatenKeys}
+      />
     </>
   );
 }

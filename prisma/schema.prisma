@@ -34,6 +34,7 @@ model User {
   keywordFilters     KeywordFilter[]
   mealSlotSettings   MealSlotSetting[]
   pantryLots         PantryLot[]
+  mealWriteOffs      MealWriteOff[]
 }
 
 // Физданные пользователя (1:1 к User). Основа для расчёта нормы (тикеты 04, 12).
@@ -331,6 +332,53 @@ model PantryLot {
   @@index([userId])
   @@index([userId, kind])
   @@index([ingredientId])
+}
+
+// Списание кладовки по факту «съел» (тикет 20, решение 07). План не персистится
+// (живёт в состоянии клиента), поэтому «флаг списание применено» из решения 07
+// реализован отдельной записью по КЛИЕНТСКОМУ ключу приёма: одна запись = одно
+// применённое списание. Уникальность (userId, mealKey) — это и есть guard от
+// двойного вычитания (повторная отметка того же приёма не создаёт вторую запись).
+model MealWriteOff {
+  id       String @id @default(cuid())
+  userId   String
+  // Стабильный ключ приёма из его содержимого (дата|слот|рецепт|порция|номер —
+  // см. lib/mealKey.ts), уникальный в пределах пользователя. НЕ uuid: выводится из
+  // содержимого, поэтому переживает перезагрузку детерминированного дня.
+  mealKey  String
+  // Аудит записи: что именно списано. Текущая логика (guard/возврат) их НЕ читает —
+  // это описание строки-леджера для отладки и задела; на списание не влияет.
+  recipeId String
+  portion  Float  @default(1)
+  people   Int    @default(1)
+
+  createdAt DateTime @default(now())
+
+  user  User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Отборы из лотов — чтобы снятие отметки «съел» вернуло РОВНО столько же назад.
+  draws MealWriteOffLot[]
+
+  @@unique([userId, mealKey])
+  @@index([userId])
+}
+
+// Отбор из одного лота при списании приёма (тикет 20). Хранит, сколько и из какого
+// лота взято, плюс данные для пересоздания лота при возврате, если исходный лот к
+// моменту снятия отметки был удалён вручную. Возврат = обратная операция.
+model MealWriteOffLot {
+  id           String  @id @default(cuid())
+  writeOffId   String
+  // Лот, из которого списано (может быть уже удалён к моменту возврата).
+  lotId        String
+  ingredientId String
+  // Взято из лота (единица продажи), > 0.
+  qty          Float
+  // Срок годности лота на момент списания (для пересоздания при возврате).
+  expiresAt    DateTime?
+
+  writeOff MealWriteOff @relation(fields: [writeOffId], references: [id], onDelete: Cascade)
+
+  @@index([writeOffId])
 }
 
 model Session {

@@ -10,8 +10,10 @@ import {
   replaceDish,
   generateWeek,
   regenerateDay,
+  regenerateDayRemainder,
   replaceMealInWeek,
   scalePortion,
+  sumNutrients,
   recipeKeywords,
   resolvePersonalization,
   productCandidates,
@@ -346,6 +348,75 @@ export async function replaceMeal(
   });
   if (!replaced) return null;
   return toDayMeal(replaced, pool.meta);
+}
+
+/** Приём раскладки с флагом «съеден» — вход перегенерации остатка (тикет 20). */
+export interface LayoutMealRef extends MealRef {
+  /** Съеден: слот фиксируется, списание кладовки уже применено. */
+  eaten: boolean;
+}
+
+/** Добавленный из поиска приём (всегда съеден) — вне раскладки. */
+export interface ExtraMealRef {
+  recipeId: string;
+  portion: number;
+  people?: number;
+}
+
+/**
+ * Перегенерирует несъеденные приёмы дня под ОСТАТОЧНЫЕ цели (тикет 20): съеденные
+ * приёмы раскладки фиксируются, съеденное вне раскладки (из поиска) входит в
+ * остаток как уже потреблённое (baseline) и не повторяется. Возвращает приёмы
+ * раскладки (съеденные — без изменений, прочие — свежие) для показа; клиент
+ * до-мёржит свои дополнительные приёмы и пересчитывает сумму. null — нет нормы.
+ * КБЖУ восстанавливаем из пула (не с клиента).
+ */
+export async function regenerateDayRemainderForUser(
+  userId: string,
+  layout: LayoutMealRef[],
+  extras: ExtraMealRef[],
+  seed: number,
+): Promise<DisplayDay | null> {
+  const norm = await activeNorm(userId);
+  if (!norm) return null;
+
+  const [pool, prefs, pantryStockIds] = await Promise.all([
+    loadRecipePool(userId),
+    loadPreferences(userId),
+    pantryStockIdsForUser(userId),
+  ]);
+  const target = dayTargetFromNorm(norm);
+
+  const current = rebuildItems(layout, pool.byId);
+  const lockedSlots = layout.filter((m) => m.eaten).map((m) => m.slot);
+
+  // Съеденное вне раскладки: КБЖУ как baseline остатка + рецепты, чтобы не повторять.
+  const extraItems = rebuildItems(
+    extras.map((e) => ({ slot: "snack" as Slot, recipeId: e.recipeId, portion: e.portion })),
+    pool.byId,
+  );
+  const consumedBaseline = sumNutrients(extraItems);
+  const consumedRecipeIds = extraItems.map((it) => it.recipeId);
+
+  const day = regenerateDayRemainder({
+    recipes: poolForGeneration(pool, prefs),
+    slots: layoutFor(prefs.onlyRecurringSlots),
+    target,
+    constraints: constraintsFrom(userId, prefs),
+    preferences: prefs.preferences,
+    pantryStockIds,
+    seed,
+    current,
+    lockedSlots,
+    consumedBaseline,
+    consumedRecipeIds,
+  });
+
+  return {
+    meals: day.items.map((it) => toDayMeal(it, pool.meta)),
+    totals: day.totals,
+    target,
+  };
 }
 
 // ── Уровень недели (тикет 15) ────────────────────────────────────────────────

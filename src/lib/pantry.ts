@@ -37,6 +37,15 @@ export async function realOnHandForUser(userId: string): Promise<Record<string, 
   return realOnHand(await loadLots(userId));
 }
 
+/**
+ * Real-лоты пользователя (с положительным запасом) в форме ядра — вход FIFO-
+ * списания при отметке «съел» (тикет 20). Отсортированы как loadLots (по продукту,
+ * затем по дате создания); порядок FIFO по сроку годности задаёт само ядро.
+ */
+export async function realLotsForUser(userId: string): Promise<PantryLot[]> {
+  return (await loadLots(userId)).filter((l) => l.kind === "real" && l.qty > 0);
+}
+
 /** Pending-лоты пользователя в форме ядра — вход промоушена pending→real. */
 export async function pendingLotsForUser(userId: string): Promise<PantryLot[]> {
   return (await loadLots(userId)).filter((l) => l.kind === "pending");
@@ -76,6 +85,7 @@ export async function loadPantryView(userId: string): Promise<PantryView[]> {
   const byId = new Map(ingredients.map((i) => [i.id, i]));
 
   const view = lots
+    .filter((l) => l.qty > 0) // списанные до нуля лоты (тикет 20) не показываем
     .map((l) => {
       const ing = byId.get(l.ingredientId);
       if (!ing) return null; // продукт удалён — лот-сирота не показываем

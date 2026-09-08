@@ -814,6 +814,115 @@ select.input {
   cursor: default;
 }
 
+/* ---------- трекинг «съел» (тикет 20) ---------- */
+.meal-check {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1.5px solid var(--sep);
+  background: transparent;
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+.meal-check.is-on {
+  background: var(--good, #34c759);
+  border-color: var(--good, #34c759);
+}
+.meal-check:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.meal-row.is-eaten .meal-name {
+  color: var(--label3);
+  text-decoration: line-through;
+}
+.meal-del {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--label3);
+  font-size: 16px;
+  line-height: 1;
+  padding: 8px;
+  cursor: pointer;
+  border-radius: 9px;
+}
+.meal-del:active {
+  background: var(--fill);
+}
+.meal-del:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.day-notice {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--warn, #c93400);
+  padding: 0 4px 10px;
+}
+.add-eaten {
+  padding: 8px;
+  margin-bottom: 10px;
+}
+.add-eaten-input {
+  width: 100%;
+  border: 0;
+  background: var(--fill);
+  color: var(--label);
+  font-size: 16px;
+  padding: 11px 12px;
+  border-radius: 10px;
+  outline: none;
+}
+.add-eaten-hint {
+  font-size: 13px;
+  color: var(--label2);
+  padding: 10px 6px 4px;
+}
+.add-eaten-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--label);
+  text-align: left;
+  padding: 12px 6px;
+  cursor: pointer;
+  position: relative;
+}
+.add-eaten-row + .add-eaten-row::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 0;
+  top: 0;
+  height: 0.5px;
+  background: var(--sep);
+}
+.add-eaten-name {
+  font-size: 15px;
+  min-width: 0;
+}
+.add-eaten-kcal {
+  flex: none;
+  font-size: 13px;
+  color: var(--label2);
+}
+.add-eaten-row:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* ---------- план недели (тикет 15) ---------- */
 .week-avg {
   display: flex;

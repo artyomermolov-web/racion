@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { generateDay, replaceDish, DEFAULT_DAY_LAYOUT } from "./generate";
+import { generateDay, replaceDish, regenerateDayRemainder, DEFAULT_DAY_LAYOUT } from "./generate";
 import { PORTION_STEPS } from "./portions";
 import type { GeneratorRecipe, DayTarget, MealSlot } from "./types";
 import type { FoodNutrients } from "@/core/nutrition";
@@ -237,6 +237,168 @@ describe("replaceDish — замена блюда с автодополнени�
       slot: "dinner" as Slot,
     };
     expect(replaceDish(args)).toEqual(replaceDish(args));
+  });
+});
+
+describe("regenerateDayRemainder — перегенерация несъеденного под остаток дня", () => {
+  const baseDay = () =>
+    generateDay({
+      recipes: ALL_RECIPES,
+      slots: DEFAULT_DAY_LAYOUT,
+      target: TARGET,
+      constraints: noConstraints,
+      seed: 5,
+    });
+
+  it("съеденные слоты остаются нетронутыми (тот же рецепт и порция)", () => {
+    const day = baseDay();
+    const locked: Slot[] = ["breakfast", "lunch"];
+    const next = regenerateDayRemainder({
+      recipes: ALL_RECIPES,
+      slots: DEFAULT_DAY_LAYOUT,
+      target: TARGET,
+      constraints: noConstraints,
+      seed: 999,
+      current: day.items,
+      lockedSlots: locked,
+    });
+    for (const slot of locked) {
+      const before = day.items.find((it) => it.slot === slot)!;
+      const after = next.items.find((it) => it.slot === slot)!;
+      expect(after.recipeId).toBe(before.recipeId);
+      expect(after.portion).toBe(before.portion);
+      expect(after.nutrients).toEqual(before.nutrients);
+    }
+  });
+
+  it("несъеденные слоты присутствуют и совместимы со своим слотом", () => {
+    const day = baseDay();
+    const next = regenerateDayRemainder({
+      recipes: ALL_RECIPES,
+      slots: DEFAULT_DAY_LAYOUT,
+      target: TARGET,
+      constraints: noConstraints,
+      seed: 123,
+      current: day.items,
+      lockedSlots: ["breakfast"],
+    });
+    // На каждый слот раскладки — по приёму.
+    expect(next.items.map((it) => it.slot)).toEqual(DEFAULT_DAY_LAYOUT.map((s) => s.slot));
+    for (const it of next.items) {
+      const r = ALL_RECIPES.find((x) => x.id === it.recipeId)!;
+      expect(r.slots).toContain(it.slot);
+    }
+  });
+
+  it("не повторяет съеденное блюдо в перегенерированных слотах", () => {
+    const day = baseDay();
+    const breakfast = day.items.find((it) => it.slot === "breakfast")!;
+    // Многие seed'ы: съеденный завтрак не должен воспроизвестись в других приёмах.
+    for (let seed = 1; seed <= 15; seed++) {
+      const next = regenerateDayRemainder({
+        recipes: ALL_RECIPES,
+        slots: DEFAULT_DAY_LAYOUT,
+        target: TARGET,
+        constraints: noConstraints,
+        seed,
+        current: day.items,
+        lockedSlots: ["breakfast"],
+      });
+      const others = next.items.filter((it) => it.slot !== "breakfast");
+      for (const it of others) expect(it.recipeId).not.toBe(breakfast.recipeId);
+    }
+  });
+
+  it("детерминизм: тот же seed → идентичный результат", () => {
+    const day = baseDay();
+    const args = {
+      recipes: ALL_RECIPES,
+      slots: DEFAULT_DAY_LAYOUT,
+      target: TARGET,
+      constraints: noConstraints,
+      seed: 55,
+      current: day.items,
+      lockedSlots: ["dinner"] as Slot[],
+    };
+    expect(regenerateDayRemainder(args)).toEqual(regenerateDayRemainder(args));
+  });
+
+  it("consumedRecipeIds (съеденное вне раскладки) не повторяется в новых слотах", () => {
+    const day = baseDay();
+    const someRecipe = day.items[1].recipeId; // возьмём чужой рецепт как «съеден вне плана»
+    for (let seed = 1; seed <= 15; seed++) {
+      const next = regenerateDayRemainder({
+        recipes: ALL_RECIPES,
+        slots: DEFAULT_DAY_LAYOUT,
+        target: TARGET,
+        constraints: noConstraints,
+        seed,
+        current: day.items,
+        lockedSlots: [],
+        consumedRecipeIds: [someRecipe],
+      });
+      for (const it of next.items) expect(it.recipeId).not.toBe(someRecipe);
+    }
+  });
+
+  it("consumedBaseline уменьшает КБЖУ перегенерированного остатка (тяга к остатку цели)", () => {
+    const day = baseDay();
+    // Съедено вне раскладки ~половина дневной цели по ккал.
+    const baseline = { kcal: 1000, protein: 70, fat: 32, carb: 110, fiber: 14, sodium: 0 };
+    const withoutBaseline = regenerateDayRemainder({
+      recipes: ALL_RECIPES,
+      slots: DEFAULT_DAY_LAYOUT,
+      target: TARGET,
+      constraints: noConstraints,
+      seed: 3,
+      current: day.items,
+      lockedSlots: [],
+    });
+    const withBaseline = regenerateDayRemainder({
+      recipes: ALL_RECIPES,
+      slots: DEFAULT_DAY_LAYOUT,
+      target: TARGET,
+      constraints: noConstraints,
+      seed: 3,
+      current: day.items,
+      lockedSlots: [],
+      consumedBaseline: baseline,
+    });
+    // С учётом уже съеденного остаток дня должен нести меньше калорий.
+    expect(withBaseline.totals.kcal).toBeLessThan(withoutBaseline.totals.kcal);
+  });
+
+  it("удалённый приём (отсутствует в current) не воскресает при перегенерации", () => {
+    const day = baseDay();
+    // Пользователь удалил обед — передаём current без слота lunch.
+    const withoutLunch = day.items.filter((it) => it.slot !== "lunch");
+    for (let seed = 1; seed <= 10; seed++) {
+      const next = regenerateDayRemainder({
+        recipes: ALL_RECIPES,
+        slots: DEFAULT_DAY_LAYOUT,
+        target: TARGET,
+        constraints: noConstraints,
+        seed,
+        current: withoutLunch,
+        lockedSlots: [],
+      });
+      expect(next.items.some((it) => it.slot === "lunch")).toBe(false);
+    }
+  });
+
+  it("все слоты съедены → день не меняется", () => {
+    const day = baseDay();
+    const allSlots = day.items.map((it) => it.slot);
+    const next = regenerateDayRemainder({
+      recipes: ALL_RECIPES,
+      slots: DEFAULT_DAY_LAYOUT,
+      target: TARGET,
+      constraints: noConstraints,
+      seed: 7,
+      current: day.items,
+      lockedSlots: allSlots,
+    });
+    expect(next.items).toEqual(day.items);
   });
 });
 
