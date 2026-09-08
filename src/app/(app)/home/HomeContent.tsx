@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { SegmentedControl } from "@/components/ios/SegmentedControl";
 import { EmptyState } from "@/components/ios/EmptyState";
 import type { NormRanges } from "@/components/NormCard";
@@ -31,6 +32,13 @@ export function HomeContent({
 }) {
   const [segment, setSegment] = useState("today");
 
+  // Подсказка «что сделать» в пустом состоянии: нет нормы — ведём в профиль.
+  const fillProfileCta = (
+    <Link href="/profil" className="btn tinted">
+      Заполнить профиль
+    </Link>
+  );
+
   return (
     <>
       <SegmentedControl
@@ -52,6 +60,7 @@ export function HomeContent({
                   ? "Не удалось собрать день из базы — проверьте, что база наполнена (npm run seed)."
                   : "Заполните профиль и рассчитайте норму — и мы соберём рацион под ваши КБЖУ."
               }
+              action={norm ? undefined : fillProfileCta}
             />
           )
         ) : week ? (
@@ -65,6 +74,7 @@ export function HomeContent({
                 ? "Не удалось собрать неделю из базы — проверьте, что база наполнена (npm run seed)."
                 : "Как только появится норма, здесь появится план на всю неделю с меню по дням."
             }
+            action={norm ? undefined : fillProfileCta}
           />
         )}
       </main>

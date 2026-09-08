@@ -1,0 +1,37 @@
+# Продакшн-задел (тикеты 10, 21): «Рацион» + PostgreSQL одной командой.
+#
+#   docker compose up -d --build
+#
+# ВАЖНО (переключение SQLite → PostgreSQL, решение 10): перед сборкой смените
+# провайдера в prisma/schema.prisma с `sqlite` на `postgresql`. DATABASE_URL уже
+# указывает на контейнер Postgres ниже; больше в схеме менять ничего не нужно.
+# HTTPS — за обратным прокси (Caddy c авто-TLS или nginx+certbot) на VPS.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: racion
+      POSTGRES_PASSWORD: racion
+      POSTGRES_DB: racion
+    volumes:
+      - racion-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U racion -d racion"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "postgresql://racion:racion@db:5432/racion?schema=public"
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  racion-db:

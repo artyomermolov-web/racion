@@ -1,6 +1,12 @@
-// Service worker «Рациона» (тикет 10).
-// Кэшируем оболочку приложения и статику; API и server actions — network-only.
-const CACHE = "racion-shell-v1";
+// Service worker «Рациона» (тикеты 10, 21).
+// Кэшируем оболочку приложения И последние отрисованные страницы-планы, чтобы
+// офлайн пользователь видел свой последний рацион. Запросы к API и server actions
+// (POST) — только сеть, никогда не кэшируются.
+const SHELL_CACHE = "racion-shell-v2";
+const RUNTIME_CACHE = "racion-runtime-v2";
+const KEEP = [SHELL_CACHE, RUNTIME_CACHE];
+
+// Оболочка: то, без чего не отрисовать ни одну страницу офлайн.
 const SHELL = [
   "/login",
   "/manifest.webmanifest",
@@ -12,7 +18,7 @@ const SHELL = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()),
+    caches.open(SHELL_CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()),
   );
 });
 
@@ -20,41 +26,64 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) =>
-        Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))),
-      )
+      .then((keys) => Promise.all(keys.filter((k) => !KEEP.includes(k)).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });
+
+// Можно ли класть ответ в кэш: только «свои» полноценные 200-ответы. Редиректы
+// (напр. неавторизованный /home → /login) в кэш не кладём — из кэша они бросают
+// ошибку и путают навигацию.
+function isCacheable(resp) {
+  return resp && resp.ok && !resp.redirected && resp.type === "basic";
+}
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Только GET того же origin; всё остальное (POST/server actions) — как есть.
+  // Только GET того же origin; POST/server actions и сторонние — как есть (сеть).
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
 
-  // API не кэшируем — только сеть.
+  // API не кэшируем — только сеть (решение 10: API network-only).
   if (url.pathname.startsWith("/api")) return;
 
-  // Навигация: сеть в приоритете, при офлайне — кэш оболочки.
+  // Навигация: сеть в приоритете; успешный ответ кладём в runtime-кэш (последние
+  // планы). Офлайн — отдаём кэш этой же страницы, иначе последнюю сохранённую
+  // страницу приложения, иначе экран входа.
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request).catch(() =>
-        caches.match(request).then((r) => r || caches.match("/login")),
-      ),
+      fetch(request)
+        .then((resp) => {
+          if (isCacheable(resp)) {
+            const copy = resp.clone();
+            caches.open(RUNTIME_CACHE).then((c) => c.put(request, copy));
+          }
+          return resp;
+        })
+        .catch(async () => {
+          const cached = await caches.match(request);
+          if (cached) return cached;
+          const runtime = await caches.open(RUNTIME_CACHE);
+          const lastPlan = (await runtime.keys())[0];
+          if (lastPlan) {
+            const r = await runtime.match(lastPlan);
+            if (r) return r;
+          }
+          return caches.match("/login");
+        }),
     );
     return;
   }
 
-  // Статика: сначала кэш, в фоне обновляем.
+  // Статика (скрипты/стили/иконки/шрифты): сначала кэш, в фоне обновляем.
   event.respondWith(
     caches.match(request).then((cached) => {
       const network = fetch(request)
         .then((resp) => {
-          if (resp.ok) {
+          if (isCacheable(resp)) {
             const copy = resp.clone();
-            caches.open(CACHE).then((c) => c.put(request, copy));
+            caches.open(SHELL_CACHE).then((c) => c.put(request, copy));
           }
           return resp;
         })
