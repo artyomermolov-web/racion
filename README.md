@@ -44,8 +44,15 @@ Dev-сервер слушает `0.0.0.0`. Узнайте IP компьютер�
 
 Продакшн-задел: приложение + PostgreSQL одной командой.
 
-1. **Переключите провайдера БД** в `prisma/schema.prisma`: `provider = "sqlite"` → `provider = "postgresql"`. Больше в схеме менять ничего не нужно — модель одинакова для SQLite и Postgres.
-2. Поднимите стек:
+1. **Получите код на сервере.** Репозиторий: `https://github.com/artyomermolov-web/racion`.
+
+   ```bash
+   git clone https://github.com/artyomermolov-web/racion.git
+   cd racion
+   # обновление уже развёрнутого сервера: git pull
+   ```
+2. **Переключите провайдера БД** в `prisma/schema.prisma`: `provider = "sqlite"` → `provider = "postgresql"`. Больше в схеме менять ничего не нужно — модель одинакова для SQLite и Postgres.
+3. Поднимите стек:
 
    ```bash
    docker compose up -d --build
