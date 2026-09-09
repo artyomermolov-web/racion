@@ -2,6 +2,8 @@
 // используется и серверными, и клиентскими компонентами. Канонические ключи
 // хранятся в БД (см. schema.prisma / core), подписи — здесь.
 
+import type { DiaryEntry } from "@/core/diary";
+
 export const SLOT_LABELS: Record<string, string> = {
   breakfast: "Завтрак",
   lunch: "Обед",
@@ -59,5 +61,31 @@ export function formatTime(min: number): string {
   return m ? `${h} ч ${m} мин` : `${h} ч`;
 }
 
-/** Граммовка без хвостовых нулей: 100 → «100», 12.5 → «12.5». */
-export const formatGrams = (g: number) => Number(g.toFixed(g % 1 === 0 ? 0 : 1));
+/** Число без хвостовых нулей: 100 → «100», 12.5 → «12.5», 0.5 → «0.5». */
+export const trimNum = (n: number) => Number(n.toFixed(n % 1 === 0 ? 0 : 1));
+
+/** Граммовка без хвостовых нулей (частный случай trimNum). */
+export const formatGrams = trimNum;
+
+/**
+ * Подпись количества записи дневника: продукт — «120 г» (штуки уже сведены в
+ * граммы при записи), рецепт — «1 порция» с корректным склонением (тикет 09).
+ */
+export function formatAmount(entry: DiaryEntry, unit: string): string {
+  if (entry.source === "recipe") {
+    const s = entry.servings ?? 0;
+    return `${trimNum(s)} ${pluralServings(s)}`;
+  }
+  return `${trimNum(entry.grams ?? 0)} ${massUnit(unit)}`;
+}
+
+/** Склонение слова «порция» по числу (1 порция / 2 порции / 5 порций). */
+function pluralServings(n: number): string {
+  const abs = Math.abs(n);
+  if (!Number.isInteger(abs)) return "порции";
+  const mod10 = abs % 10;
+  const mod100 = abs % 100;
+  if (mod10 === 1 && mod100 !== 11) return "порция";
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return "порции";
+  return "порций";
+}

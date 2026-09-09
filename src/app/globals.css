@@ -1689,6 +1689,223 @@ select.input {
   color: var(--label3);
 }
 
+/* ---------- ручной лог дневника (тикет 09) ---------- */
+.diary-add-primary {
+  margin: 4px 0 20px;
+}
+
+/* Секции приёмов с записями. */
+.diary-meals {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.diary-meal-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 0 4px 8px;
+}
+.diary-meal-head .diary-slot-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+.diary-meal-subtotal {
+  font-size: 13px;
+  color: var(--label2);
+}
+.diary-add {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: var(--tint);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.diary-add:active {
+  opacity: 0.6;
+}
+.diary-meal-empty {
+  margin: 0;
+  padding: 2px 4px 4px;
+}
+
+/* Строка записи «название · количество · ккал». */
+.diary-entry {
+  gap: 10px;
+  align-items: baseline;
+}
+.diary-entry-name {
+  font-size: 15px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.diary-entry-amount {
+  font-size: 13px;
+  color: var(--label2);
+  white-space: nowrap;
+}
+.diary-entry-kcal {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Свайп-влево до кнопки «Удалить». */
+.swipe-row {
+  position: relative;
+  overflow: hidden;
+}
+.swipe-row + .swipe-row::before {
+  content: "";
+  position: absolute;
+  left: 16px;
+  right: 0;
+  top: 0;
+  height: 0.5px;
+  background: var(--sep);
+  z-index: 1;
+}
+.swipe-row-delete {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  border: 0;
+  background: var(--danger);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.swipe-row-content {
+  position: relative;
+  background: var(--card);
+  touch-action: pan-y;
+  transition: transform 0.18s ease;
+  will-change: transform;
+}
+.swipe-row-content .diary-entry {
+  cursor: pointer;
+}
+
+/* Шит добавления/правки (bottom sheet). */
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.sheet {
+  width: 100%;
+  max-width: 560px;
+  max-height: 88vh;
+  background: var(--bg);
+  border-radius: 16px 16px 0 0;
+  display: flex;
+  flex-direction: column;
+  animation: sheet-up 0.22s ease;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+.sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 0.5px solid var(--sep);
+}
+.sheet-title {
+  font-size: 17px;
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+}
+.sheet-close {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--fill);
+  color: var(--label2);
+  font-size: 15px;
+  cursor: pointer;
+}
+.sheet-body {
+  padding: 16px;
+  overflow-y: auto;
+}
+.sheet-scroll {
+  min-height: 0;
+}
+.sheet-back {
+  border: 0;
+  background: none;
+  color: var(--tint);
+  font-size: 15px;
+  cursor: pointer;
+  padding: 0 0 8px;
+}
+.pick-row {
+  width: 100%;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+/* Экран количества. */
+.amount-food {
+  font-size: 17px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.amount-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.amount-presets .chip[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--tint) 16%, transparent);
+  color: var(--tint);
+}
+.amount-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--fill);
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+.amount-kcal {
+  font-size: 17px;
+  font-weight: 700;
+}
+.form-error {
+  color: var(--danger);
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
 /* ---------- печать ---------- */
 @media print {
   .nav,

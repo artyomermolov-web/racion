@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-human
+**Status:** resolved
 
 Опирается на решения: спека [spec.md](../spec.md) (Implementation/Testing Decisions). Цель дня = `dayTargetFromNorm(активный NutritionProfile)`.
 
