@@ -35,6 +35,7 @@ model User {
   mealSlotSettings   MealSlotSetting[]
   pantryLots         PantryLot[]
   mealWriteOffs      MealWriteOff[]
+  diaryEntries       DiaryEntry[]
 }
 
 // Физданные пользователя (1:1 к User). Основа для расчёта нормы (тикеты 04, 12).
@@ -379,6 +380,49 @@ model MealWriteOffLot {
   writeOff MealWriteOff @relation(fields: [writeOffId], references: [id], onDelete: Cascade)
 
   @@index([writeOffId])
+}
+
+// --- Дневник еды (тикет 08, под-проект A) ---
+// Единственная новая таблица под-проекта. Запись = один залогированный факт еды
+// в конкретный приём конкретного дня. Дата — локальная календарная строка
+// пользователя (YYYY-MM-DD), сервер её не переинтерпретирует через UTC.
+// Снапшот КБЖУ (5 отслеживаемых: kcal/protein/fat/carb/fiber) считается в момент
+// записи и хранится в строке — правка продукта/рецепта в базе не меняет прошлые
+// записи. Натрий в дневнике MVP не отслеживается (согласовано с sodiumMax=null).
+// refId ссылается на Ingredient.id или Recipe.id (по source) без FK-каскада:
+// базовые продукты/рецепты общие, а записи привязаны к пользователю (каскад по
+// User). Значения-«enum» (slot, source) хранятся строкой — как во всей схеме;
+// допустимые значения фиксируются union-типами в /core/diary.
+model DiaryEntry {
+  id     String @id @default(cuid())
+  userId String
+  // Локальная календарная дата пользователя, YYYY-MM-DD.
+  date   String
+  // "breakfast" | "lunch" | "dinner" | "snack".
+  slot   String
+  // "ingredient" | "recipe" — что залогировано.
+  source String
+  // Ingredient.id (source=ingredient) или Recipe.id (source=recipe).
+  refId  String
+  // Количество: граммы (source=ingredient, включая штуки→граммы) ИЛИ
+  // сервинги/порции (source=recipe). Заполнено ровно одно из двух.
+  grams    Float?
+  servings Float?
+  // Снапшот нутриентов на момент записи (5 отслеживаемых).
+  kcal    Float
+  protein Float
+  fat     Float
+  carb    Float
+  fiber   Float
+  // Пометка происхождения из подсказки «Что поесть сейчас» (тикет 10). Null —
+  // запись заведена вручную.
+  suggestedRecipeId String?
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
 }
 
 model Session {

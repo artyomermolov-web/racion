@@ -1503,6 +1503,192 @@ select.input {
   cursor: default;
 }
 
+/* ---------- дневник (тикет 08) ---------- */
+.diary.is-busy {
+  transition: opacity 0.15s ease;
+}
+.diary.is-busy .diary-summary,
+.diary.is-busy .group,
+.diary.is-busy .empty {
+  opacity: 0.6;
+}
+
+/* Шапка с датой и листанием день назад/вперёд. */
+.date-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0 12px;
+}
+.date-nav-btn {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: var(--fill);
+  color: var(--tint);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.date-nav-btn:active {
+  background: var(--sep);
+}
+.date-nav-label {
+  flex: 1;
+  text-align: center;
+  min-width: 0;
+}
+.date-nav-title {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.date-nav-sub {
+  font-size: 13px;
+  color: var(--label2);
+  margin-top: 1px;
+}
+
+.diary-loading {
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--label2);
+  font-size: 15px;
+}
+
+/* Сводка остатка: кольцо ккал + бары Б/Ж/У. */
+.diary-summary-top {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 18px 16px;
+}
+.kcal-ring {
+  position: relative;
+  flex: none;
+  width: 132px;
+  height: 132px;
+}
+.kcal-ring svg {
+  width: 132px;
+  height: 132px;
+  display: block;
+}
+.kcal-ring-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.kcal-ring-num {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.kcal-ring-num.over {
+  color: var(--danger);
+}
+.kcal-ring-label {
+  font-size: 12px;
+  color: var(--label2);
+  margin-top: 4px;
+}
+
+.macro-bars {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.macro-bar-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  margin-bottom: 5px;
+}
+.macro-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+}
+.macro-name {
+  color: var(--label2);
+}
+.macro-bar.is-lagging .macro-name {
+  color: var(--label);
+  font-weight: 600;
+}
+.macro-flag {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tint);
+  background: color-mix(in srgb, var(--tint) 14%, transparent);
+  border-radius: 6px;
+  padding: 1px 6px;
+}
+.macro-val {
+  margin-left: auto;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.macro-target {
+  color: var(--label3);
+  font-weight: 400;
+}
+.macro-track {
+  height: 7px;
+  border-radius: 4px;
+  background: var(--fill);
+  overflow: hidden;
+}
+.macro-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+.macro-bar.is-lagging .macro-track {
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--tint) 45%, transparent);
+}
+
+/* Секции приёмов (тикет 08: пустые — показ записей в тикете 09). */
+.diary-slot {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 12px 16px;
+  position: relative;
+}
+.diary-slot + .diary-slot::before {
+  content: "";
+  position: absolute;
+  left: 16px;
+  right: 0;
+  top: 0;
+  height: 0.5px;
+  background: var(--sep);
+}
+.diary-slot-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+.diary-slot-empty {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--label3);
+}
+
 /* ---------- печать ---------- */
 @media print {
   .nav,

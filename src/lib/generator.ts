@@ -461,7 +461,7 @@ function toDisplayWeek(
 }
 
 /** Активная норма пользователя или null. */
-async function activeNorm(userId: string) {
+export async function activeNorm(userId: string) {
   return prisma.nutritionProfile.findFirst({
     where: { userId, isActive: true },
     orderBy: { createdAt: "desc" },
