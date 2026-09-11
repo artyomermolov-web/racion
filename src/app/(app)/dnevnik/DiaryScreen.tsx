@@ -23,6 +23,7 @@ import type { IngredientRow, RecipeRow } from "@/lib/food";
 import type { DiaryEntry, SlotSummary } from "@/core/diary";
 import type { Slot } from "@/core/generator";
 import { LogSheet, type LogSheetMode } from "./LogSheet";
+import { SuggestionsBlock } from "./SuggestionsBlock";
 
 /** Локальная дата → YYYY-MM-DD (по локальным полям, не через UTC/toISOString). */
 function toKey(d: Date): string {
@@ -151,11 +152,13 @@ export function DiaryScreen({
       <DayBody
         data={data}
         loading={loading && !data}
+        date={date}
         ingredients={ingredients}
         recipes={recipes}
         onAdd={(slot) => setSheet({ kind: "add", slot })}
         onEdit={(entry) => setSheet({ kind: "edit", entry })}
         onDelete={handleDelete}
+        onDayResult={applyResult}
       />
 
       {sheet && data && (
@@ -176,19 +179,23 @@ export function DiaryScreen({
 function DayBody({
   data,
   loading,
+  date,
   ingredients,
   recipes,
   onAdd,
   onEdit,
   onDelete,
+  onDayResult,
 }: {
   data: DayLogResult | null;
   loading: boolean;
+  date: string;
   ingredients: IngredientRow[];
   recipes: RecipeRow[];
   onAdd: (slot: Slot) => void;
   onEdit: (entry: DiaryEntry) => void;
   onDelete: (id: string) => void;
+  onDayResult: (r: DayLogResult) => void;
 }) {
   if (loading || !data) {
     return <div className="diary-loading">Загрузка…</div>;
@@ -219,9 +226,20 @@ function DayBody({
       : (ingName.get(e.refId)?.name ?? "Продукт");
   const foodUnit = (e: DiaryEntry) => ingName.get(e.refId)?.unit ?? "g";
 
+  // Токен обновления блока подсказок: меняется с остатком дня (ручной лог/правка/
+  // удаление двигают КБЖУ → блок перезапрашивается под новый остаток).
+  const refreshToken = `${data.entries.length}|${data.totals.kcal}|${data.totals.protein}|${data.totals.fat}|${data.totals.carb}`;
+
   return (
     <>
       <DaySummary progress={data.progress} />
+
+      {/* Килфича «Что поесть сейчас» — сразу под сводкой остатка (тикет 10). */}
+      <SuggestionsBlock
+        date={date}
+        refreshToken={refreshToken}
+        onDayResult={onDayResult}
+      />
 
       {/* Быстрое добавление: приём предзаполнен следующим незаполненным (иначе
           перекус), меняется в шите (item 6). Плюс у каждого приёма — свой «+». */}

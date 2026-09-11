@@ -1932,3 +1932,88 @@ select.input {
     break-inside: avoid;
   }
 }
+
+/* ---------- «Что поесть сейчас» (тикет 10) ---------- */
+.suggest {
+  margin-bottom: 20px;
+}
+.suggest.is-busy {
+  opacity: 0.6;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.suggest-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 2px 14px;
+}
+.suggest-chips .chip[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--tint) 16%, transparent);
+  color: var(--tint);
+}
+.suggest-loading,
+.suggest-empty {
+  padding: 14px 16px;
+  font-size: 14px;
+  color: var(--label2);
+  background: var(--card);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  margin-bottom: 14px;
+}
+.suggest-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.suggest-card {
+  margin-bottom: 0;
+  padding: 14px 16px;
+}
+.suggest-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.suggest-card-name {
+  font-size: 16px;
+  font-weight: 600;
+  min-width: 0;
+  flex: 1;
+}
+.suggest-card-portion {
+  font-size: 13px;
+  color: var(--label2);
+  flex: none;
+}
+.suggest-card-macros {
+  margin-top: 5px;
+  font-size: 13px;
+  color: var(--label2);
+}
+.suggest-card-note {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--tint);
+}
+.suggest-card-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.suggest-card-actions .btn {
+  width: auto;
+  flex: 1;
+  margin-bottom: 0;
+  padding: 10px;
+  font-size: 15px;
+  text-decoration: none;
+}
+.suggest-regen {
+  margin-bottom: 4px;
+}
+.suggest-remainder {
+  margin-top: 16px;
+}

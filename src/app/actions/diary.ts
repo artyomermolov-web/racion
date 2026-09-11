@@ -1,6 +1,7 @@
 "use server";
 
-// Действия дневника (тикеты 08–09): чтение дня + ручной лог/правка/удаление.
+// Действия дневника (тикеты 08–10): чтение дня + ручной лог/правка/удаление +
+// подсказки «Что поесть сейчас» (блок, лог в один тап, пересборка остатка).
 // Тонкий слой — requireUser() → src/lib/diary.ts; вся логика и снапшоты в lib/ядре.
 import { requireUser } from "@/lib/auth";
 import {
@@ -8,10 +9,18 @@ import {
   addEntry,
   updateEntry,
   deleteEntry,
+  getSuggestions,
+  logSuggestion,
+  regenerateRemainder,
   type DayLogResult,
   type AddEntryInput,
+  type EffortFilter,
+  type LogSuggestionInput,
+  type LogSuggestionResult,
+  type SuggestionBlock,
 } from "@/lib/diary";
 import type { LoggedAmount } from "@/core/diary";
+import type { DisplayDay } from "@/lib/generator";
 
 /**
  * День дневника по локальной дате пользователя (YYYY-MM-DD). Дату определяет
@@ -43,4 +52,32 @@ export async function updateEntryAction(
 export async function deleteEntryAction(id: string): Promise<DayLogResult> {
   const user = await requireUser();
   return deleteEntry(user.id, id);
+}
+
+// ── «Что поесть сейчас» (тикет 10) ───────────────────────────────────────────
+
+/** Подсказки под остаток текущего приёма дня, с учётом фильтра усилий. */
+export async function getSuggestionsAction(
+  date: string,
+  effort: EffortFilter = "cook",
+): Promise<SuggestionBlock> {
+  const user = await requireUser();
+  return getSuggestions(user.id, date, effort);
+}
+
+/** Лог подсказки в один тап (идемпотентно); возвращает день + обновлённый блок. */
+export async function logSuggestionAction(
+  input: LogSuggestionInput,
+): Promise<LogSuggestionResult> {
+  const user = await requireUser();
+  return logSuggestion(user.id, input);
+}
+
+/** Пересобрать остаток дня: свежий набор приёмов под текущий остаток. */
+export async function regenerateRemainderAction(
+  date: string,
+  seed: number,
+): Promise<DisplayDay | null> {
+  const user = await requireUser();
+  return regenerateRemainder(user.id, date, seed);
 }

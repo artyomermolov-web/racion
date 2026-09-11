@@ -422,6 +422,13 @@ model DiaryEntry {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  // БД-guard идемпотентности лога подсказки «Что поесть сейчас» (тикет 10): одна
+  // подсказка (date|slot|suggestedRecipeId) логируется не более одного раза —
+  // повторный тап «съел» не создаёт дубль. Для ручных записей suggestedRecipeId =
+  // null, а в SQLite NULL в уникальном индексе различны, поэтому ручной лог под
+  // этот guard не попадает (ограничение только на подсказки). Прямой аналог
+  // MealWriteOff @@unique([userId, mealKey]).
+  @@unique([userId, date, slot, suggestedRecipeId])
   @@index([userId, date])
 }
 

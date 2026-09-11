@@ -419,6 +419,112 @@ export async function regenerateDayRemainderForUser(
   };
 }
 
+// ── Контекст подсказок «Что поесть сейчас» (тикет 10) ────────────────────────
+
+/** Готовый контекст для движка подсказок дневника (кандидаты + ограничения + цель). */
+export interface SuggestionContext {
+  /** Кандидаты генерации (база + свои, персонализация применена, recurring-продукты). */
+  candidates: GeneratorRecipe[];
+  /** Имена рецептов/продуктов по id — для карточек подсказок. */
+  names: Map<string, string>;
+  constraints: GeneratorConstraints;
+  preferences: Preferences;
+  /** Дневная цель (середины нормы) — и остаток, и масштаб скоринга. */
+  target: DayTarget;
+}
+
+/**
+ * Загружает контекст для подсказок дневника (тикет 10): тот же пул кандидатов и
+ * ограничения, что и у генератора (переиспуем `loadRecipePool`/`poolForGeneration`/
+ * `loadPreferences`/`constraintsFrom`). null — нет активной нормы (остаток считать
+ * не от чего, UI показывает «заполни профиль»).
+ */
+export async function loadSuggestionContext(
+  userId: string,
+): Promise<SuggestionContext | null> {
+  const norm = await activeNorm(userId);
+  if (!norm) return null;
+
+  const [pool, prefs] = await Promise.all([
+    loadRecipePool(userId),
+    loadPreferences(userId),
+  ]);
+
+  const names = new Map<string, string>(
+    [...pool.meta].map(([id, m]) => [id, m.name]),
+  );
+
+  // Кандидаты подсказок — только РЕЦЕПТЫ (pool.recipes, персонализация уже
+  // применена), не poolForGeneration: тот подмешивает recurring кастом-ПРОДУКТЫ
+  // (id ингредиента), а у продукта нет карточки рецепта («показать рецепт») и
+  // пути лога в один тап (logSuggestion пишет source=recipe). Бонусы избранного/
+  // recurring для рецептов сохраняются — они применяются в скоринге по preferences.
+  return {
+    candidates: pool.recipes,
+    names,
+    constraints: constraintsFrom(userId, prefs),
+    preferences: prefs.preferences,
+    target: dayTargetFromNorm(norm),
+  };
+}
+
+/** Плейсхолдер-слот при перегенерации остатка дневника (см. ниже). */
+const DIARY_PLACEHOLDER_ID = "__diary_remainder_placeholder__";
+
+/**
+ * Свежий план ОСТАТКА дня для дневника (тикет 10, вторичная «пересобрать остаток
+ * дня»). Переиспользует ядро `regenerateDayRemainder` — НОВОЙ логики генерации не
+ * пишем: съеденное по факту дневника входит как `consumedBaseline` (точная сумма
+ * снапшотов, включая продукты), уже залогированные рецепты не повторяются, а слоты
+ * не залочены (в дневнике «плана» нет — все приёмы предлагаются свежими под
+ * остаточную цель). Плейсхолдер-приёмы нужны лишь чтобы ядро заполнило каждый слот;
+ * их содержимое для незалоченных слотов не используется, а слоты без кандидата
+ * (ядро вернуло плейсхолдер) отфильтровываются. null — нет активной нормы.
+ */
+export async function regenerateDiaryRemainder(
+  userId: string,
+  consumed: FoodNutrients,
+  consumedRecipeIds: string[],
+  seed: number,
+): Promise<DisplayDay | null> {
+  const norm = await activeNorm(userId);
+  if (!norm) return null;
+
+  const [pool, prefs, pantryStockIds] = await Promise.all([
+    loadRecipePool(userId),
+    loadPreferences(userId),
+    pantryStockIdsForUser(userId),
+  ]);
+  const target = dayTargetFromNorm(norm);
+  const slots = layoutFor(prefs.onlyRecurringSlots);
+
+  const current: PlanItem[] = slots.map((s) => ({
+    slot: s.slot,
+    recipeId: DIARY_PLACEHOLDER_ID,
+    portion: 1,
+    nutrients: sumNutrients([]),
+  }));
+
+  const day = regenerateDayRemainder({
+    recipes: poolForGeneration(pool, prefs),
+    slots,
+    target,
+    constraints: constraintsFrom(userId, prefs),
+    preferences: prefs.preferences,
+    pantryStockIds,
+    seed,
+    current,
+    lockedSlots: [],
+    consumedBaseline: consumed,
+    consumedRecipeIds,
+  });
+
+  const meals = day.items
+    .filter((it) => it.recipeId !== DIARY_PLACEHOLDER_ID)
+    .map((it) => toDayMeal(it, pool.meta));
+  return { meals, totals: sumNutrients(meals), target };
+}
+
 // ── Уровень недели (тикет 15) ────────────────────────────────────────────────
 
 const WEEK_DAYS = 7;
