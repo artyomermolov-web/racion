@@ -10,7 +10,15 @@
 // остаток дня) и списывает кладовку; снятие обратимо. Заменить / Удалить /
 // Перегенерировать остаток работают над предложенными приёмами (состояние клиента,
 // как на /home) и не трогают съеденное. Продукт (не рецепт): «съел» без списания
-// кладовки, «заменить» у него нет. Действия пока текстовые (иконки — тикет 11).
+// кладовки, «заменить» у него нет.
+//
+// Действия — иконки своего инлайн-SVG набора в стиле HIG (тикет 11): «съел» —
+// галочка-в-круге-toggle с тремя состояниями (off/on/busy) через aria-pressed/busy,
+// «заменить» — круговые стрелки, «удалить» — корзина. «Перегенерировать» остаётся
+// текстовой кнопкой (первичное действие дня). Тап по телу строки разворачивает
+// инлайн-аккордеон рецепта (состав/шаги/время; для продукта — КБЖУ/порция); тап по
+// иконке-действию — отдельная зона (кнопки-соседи `.diary-feed-main`, не вложены).
+// Данные рецепта тянутся по refId ленивым догрузом и кэшируются на время сессии.
 //
 // План держим в состоянии клиента и грузим детерминированным по дате экшеном
 // (`getDayPlanAction`) — перезагрузка даёт тот же план, связка «предложение ↔
@@ -19,18 +27,32 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { SwipeRow } from "@/components/ios/SwipeRow";
-import { SLOT_LABELS, label, formatAmount, formatTime } from "@/lib/food-labels";
+import {
+  AddIcon,
+  TrashIcon,
+  ReplaceIcon,
+  EatIcon,
+} from "@/components/ios/ActionIcon";
+import {
+  SLOT_LABELS,
+  label,
+  formatAmount,
+  formatGrams,
+  formatTime,
+  massUnit,
+} from "@/lib/food-labels";
 import {
   getDayPlanAction,
   eatPlanMealAction,
   uneatPlanMealAction,
   deleteEntryAction,
 } from "@/app/actions/diary";
+import { getRecipeDetailAction } from "@/app/actions/food";
 import { replaceMealAction } from "@/app/actions/plan";
 import { regenerateRemainderAction as regeneratePlanRemainderAction } from "@/app/actions/track";
 import type { DayLogResult } from "@/lib/diary";
 import type { DayMeal, MealRef, LayoutMealRef, ExtraMealRef } from "@/lib/generator";
-import type { IngredientRow, RecipeRow } from "@/lib/food";
+import type { IngredientRow, RecipeRow, RecipeDetail } from "@/lib/food";
 import {
   assembleDayFeed,
   type DiaryEntry,
@@ -46,6 +68,9 @@ const freshSeed = () => Math.floor(Math.random() * 0x7fffffff);
 const SHORTFALL_NOTICE = "Кладовки хватило не на всё — списали, что было дома.";
 
 const fmt = (n: number) => n.toLocaleString("ru-RU");
+
+/** Состояние догруза карточки рецепта для аккордеона (кэш по recipeId). */
+type RecipeDetailState = RecipeDetail | "loading" | "error";
 
 /** КБЖУ приёма плана (6 нутриентов) → 5 отслеживаемых дневником (натрий не трогаем). */
 function toPlanMeal(m: DayMeal): PlanMeal {
@@ -90,6 +115,14 @@ export function DayFeed({
   const [error, setError] = useState<string | null>(null);
   const reqId = useRef(0);
 
+  // Раскрытие рецепта по тапу (тикет 11): раскрыт один за раз (аккордеон). `key` —
+  // ключ строки, `recipeId` — рецепт для догруза (null у продукта: догружать нечего).
+  const [expanded, setExpanded] = useState<{
+    key: string;
+    recipeId: string | null;
+  } | null>(null);
+  const [details, setDetails] = useState<Record<string, RecipeDetailState>>({});
+
   useEffect(() => {
     const id = ++reqId.current;
     getDayPlanAction(date)
@@ -101,6 +134,33 @@ export function DayFeed({
         if (id === reqId.current) setPlan([]);
       });
   }, [date]);
+
+  // Ленивый догруз карточки рецепта при раскрытии (тикет 11). Кэшируем по recipeId;
+  // повторное раскрытие того же рецепта берёт из кэша. Ошибку разрешаем перезапросить
+  // (повторное раскрытие после сбоя перезапускает загрузку).
+  useEffect(() => {
+    const rid = expanded?.recipeId;
+    if (!rid) return;
+    const cur = details[rid];
+    if (cur && cur !== "error") return;
+    let alive = true;
+    setDetails((d) => ({ ...d, [rid]: "loading" }));
+    getRecipeDetailAction(rid)
+      .then((res) => {
+        if (alive) setDetails((d) => ({ ...d, [rid]: res ?? "error" }));
+      })
+      .catch(() => {
+        if (alive) setDetails((d) => ({ ...d, [rid]: "error" }));
+      });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded?.recipeId]);
+
+  const toggleExpand = (key: string, recipeId: string | null) => {
+    setExpanded((cur) => (cur?.key === key ? null : { key, recipeId }));
+  };
 
   // Имя и единица еды записи резолвятся из базы (снапшот хранит только refId).
   const ingName = useMemo(
@@ -116,6 +176,14 @@ export function DayFeed({
       ? (recName.get(e.refId) ?? "Рецепт")
       : (ingName.get(e.refId)?.name ?? "Продукт");
   const foodUnit = (e: DiaryEntry) => ingName.get(e.refId)?.unit ?? "g";
+
+  // Граммовка ещё не съеденного предложенного продукта для аккордеона: логируется
+  // как portion×100 г (см. logSuggestion в lib/diary), поэтому и показываем столько.
+  const suggestedProductAmount = (m: DayMeal | undefined): string | null => {
+    if (!m || m.source !== "ingredient") return null;
+    const unit = ingName.get(m.recipeId)?.unit ?? "g";
+    return `${formatGrams(m.portion * 100)} ${massUnit(unit)}`;
+  };
 
   // Приём плана по (слот|рецепт) — для source/названия/времени позиций ленты.
   const planByKey = useMemo(() => {
@@ -303,8 +371,13 @@ export function DayFeed({
               {s.items.length > 0 && (
                 <span className="diary-meal-subtotal num">{s.totals.kcal} ккал</span>
               )}
-              <button type="button" className="diary-add" onClick={() => onAdd(s.slot)}>
-                + добавить
+              <button
+                type="button"
+                className="icon-btn diary-add"
+                onClick={() => onAdd(s.slot)}
+                aria-label={`Добавить еду: ${label(SLOT_LABELS, s.slot)}`}
+              >
+                <AddIcon />
               </button>
             </div>
 
@@ -312,29 +385,39 @@ export function DayFeed({
               <div className="diary-slot-empty diary-meal-empty">Пока пусто</div>
             ) : (
               <div className="group diary-feed-items">
-                {s.items.map((item, i) => (
-                  <FeedRow
-                    key={item.entry?.id ?? `${item.slot}-${item.suggestion?.recipeId}-${i}`}
-                    item={item}
-                    meal={
-                      item.suggestion
-                        ? planByKey.get(`${item.slot}|${item.suggestion.recipeId}`)
-                        : undefined
-                    }
-                    busy={
-                      item.suggestion ? busyKey === keyFor(item.suggestion) : false
-                    }
-                    disabled={pending}
-                    foodName={foodName}
-                    foodUnit={foodUnit}
-                    onEat={eat}
-                    onUneat={uneat}
-                    onReplace={replace}
-                    onRemove={removeSuggested}
-                    onEditEntry={onEdit}
-                    onDeleteEntry={deleteEntry}
-                  />
-                ))}
+                {s.items.map((item, i) => {
+                  const mealForItem = item.suggestion
+                    ? planByKey.get(`${item.slot}|${item.suggestion.recipeId}`)
+                    : undefined;
+                  const rowKey =
+                    item.suggestion
+                      ? `${item.slot}|${item.suggestion.recipeId}`
+                      : (item.entry?.id ?? `${item.slot}-extra-${i}`);
+                  return (
+                    <FeedRow
+                      key={item.entry?.id ?? `${item.slot}-${item.suggestion?.recipeId}-${i}`}
+                      item={item}
+                      meal={mealForItem}
+                      busy={
+                        item.suggestion ? busyKey === keyFor(item.suggestion) : false
+                      }
+                      disabled={pending}
+                      rowKey={rowKey}
+                      expanded={expanded?.key === rowKey}
+                      detail={expanded?.recipeId ? details[expanded.recipeId] : undefined}
+                      suggestedProductAmount={suggestedProductAmount(mealForItem)}
+                      onToggleExpand={toggleExpand}
+                      foodName={foodName}
+                      foodUnit={foodUnit}
+                      onEat={eat}
+                      onUneat={uneat}
+                      onReplace={replace}
+                      onRemove={removeSuggested}
+                      onEditEntry={onEdit}
+                      onDeleteEntry={deleteEntry}
+                    />
+                  );
+                })}
               </div>
             )}
           </section>
@@ -361,6 +444,11 @@ function FeedRow({
   meal,
   busy,
   disabled,
+  rowKey,
+  expanded,
+  detail,
+  suggestedProductAmount,
+  onToggleExpand,
   foodName,
   foodUnit,
   onEat,
@@ -375,6 +463,14 @@ function FeedRow({
   meal: DayMeal | undefined;
   busy: boolean;
   disabled: boolean;
+  /** Стабильный ключ строки для аккордеона (раскрыт один за раз). */
+  rowKey: string;
+  expanded: boolean;
+  /** Догруженная карточка рецепта раскрытой строки (иначе undefined). */
+  detail: RecipeDetailState | undefined;
+  /** Граммовка предложенного продукта (нет entry) для аккордеона, иначе null. */
+  suggestedProductAmount: string | null;
+  onToggleExpand: (key: string, recipeId: string | null) => void;
   foodName: (e: DiaryEntry) => string;
   foodUnit: (e: DiaryEntry) => string;
   onEat: (meal: DayMeal) => void;
@@ -386,82 +482,111 @@ function FeedRow({
 }) {
   const n = item.nutrients;
 
-  // Предложено: карточка с КБЖУ и текстовыми действиями. Для продукта «заменить» нет.
-  if (item.status === "suggested" && meal) {
+  // Предложено / съедено: карточка плана с телом-toggle (раскрытие рецепта) и
+  // иконками-действиями. Обе делят разметку — статус меняет действия и вид. Приём
+  // плана (`meal`) грузится асинхронно, поэтому имя/источник/refId берём из него с
+  // фолбэком на запись (`entry`): съеденный приём не должен «мигать» ручной записью,
+  // пока догружается план. Заменить/удалить/«съесть» требуют `meal` — они только у
+  // предложенного (план к этому моменту уже загружен).
+  if (item.suggestion) {
+    const isEaten = item.status === "eaten";
+    const entry = item.entry;
+    const name = meal?.name ?? (entry ? foodName(entry) : "Блюдо");
+    const source = meal?.source ?? entry?.source ?? "recipe";
+    const isRecipe = source === "recipe";
+    const recipeId = meal?.recipeId ?? entry?.refId ?? item.suggestion.recipeId;
+    const eatState: "off" | "on" | "busy" = busy ? "busy" : isEaten ? "on" : "off";
+
     return (
-      <div className="row diary-feed-item is-suggested">
-        <div className="grow diary-feed-main">
-          <div className="diary-feed-name">
-            {meal.name}
-            <span className="diary-feed-tag"> · предложено</span>
-          </div>
-          <div className="diary-feed-macros num">
-            <b>{fmt(n.kcal)}</b> ккал · Б {n.protein} · Ж {n.fat} · У {n.carb} · Кл{" "}
-            {n.fiber} · {formatTime(meal.timeMin)}
-          </div>
-        </div>
-        <div className="diary-feed-actions">
+      <div
+        className={
+          "diary-feed-item " + (isEaten ? "is-eaten" : "is-suggested") +
+          (expanded ? " is-open" : "")
+        }
+      >
+        <div className="diary-feed-row">
           <button
             type="button"
-            className="btn tinted diary-feed-eat"
-            onClick={() => onEat(meal)}
-            disabled={disabled}
+            className="diary-feed-main"
+            aria-expanded={expanded}
+            onClick={() => onToggleExpand(rowKey, isRecipe ? recipeId : null)}
           >
-            {busy ? "…" : "Съел"}
+            <div className="diary-feed-name">
+              {name}
+              {!isEaten && <span className="diary-feed-tag"> · предложено</span>}
+              <span className="diary-feed-chev" aria-hidden="true">
+                {expanded ? "⌃" : "⌄"}
+              </span>
+            </div>
+            <div className="diary-feed-macros num">
+              <b>{fmt(n.kcal)}</b> ккал · Б {n.protein} · Ж {n.fat} · У {n.carb} · Кл{" "}
+              {n.fiber}
+              {!isEaten && meal && ` · ${formatTime(meal.timeMin)}`}
+            </div>
           </button>
-          {meal.source === "recipe" && (
+
+          <div className="diary-feed-actions">
             <button
               type="button"
-              className="btn gray"
-              onClick={() => onReplace(meal)}
+              className="icon-btn eat-btn"
+              aria-pressed={isEaten}
+              aria-busy={busy}
+              onClick={() => {
+                if (isEaten) onUneat(item);
+                else if (meal) onEat(meal);
+              }}
               disabled={disabled}
-              aria-label={`Заменить блюдо: ${meal.name}`}
+              aria-label={
+                isEaten
+                  ? `Снять отметку «съел»: ${name}`
+                  : `Отметить съеденным: ${name}`
+              }
             >
-              Заменить
+              <EatIcon state={eatState} />
             </button>
-          )}
-          <button
-            type="button"
-            className="btn gray"
-            onClick={() => onRemove(meal)}
-            disabled={disabled}
-            aria-label={`Удалить приём: ${meal.name}`}
-          >
-            Удалить
-          </button>
-        </div>
-      </div>
-    );
-  }
 
-  // Съедено по плану: запись есть, связка с предложением цела. Обратимо — «снять».
-  if (item.status === "eaten" && item.entry) {
-    const name = meal?.name ?? foodName(item.entry);
-    return (
-      <div className="row diary-feed-item is-eaten">
-        <div className="grow diary-feed-main">
-          <div className="diary-feed-name">
-            <span className="diary-feed-check" aria-hidden="true">
-              ✓
-            </span>
-            {name}
-          </div>
-          <div className="diary-feed-macros num">
-            <b>{fmt(n.kcal)}</b> ккал · Б {n.protein} · Ж {n.fat} · У {n.carb} · Кл{" "}
-            {n.fiber}
+            {/* Заменить/удалить — только над предложенным (съеденное не трогаем). */}
+            {!isEaten && isRecipe && meal && (
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => onReplace(meal)}
+                disabled={disabled}
+                aria-label={`Заменить блюдо: ${name}`}
+              >
+                <ReplaceIcon />
+              </button>
+            )}
+            {!isEaten && meal && (
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => onRemove(meal)}
+                disabled={disabled}
+                aria-label={`Удалить приём: ${name}`}
+              >
+                <TrashIcon />
+              </button>
+            )}
           </div>
         </div>
-        <div className="diary-feed-actions">
-          <button
-            type="button"
-            className="btn gray"
-            onClick={() => onUneat(item)}
-            disabled={disabled}
-            aria-label="Снять отметку «съел»"
-          >
-            {busy ? "…" : "Снять"}
-          </button>
-        </div>
+
+        {expanded && (
+          <div className="diary-feed-detail">
+            {isRecipe ? (
+              <RecipeDetailBody detail={detail} />
+            ) : (
+              <ProductDetailBody
+                nutrients={n}
+                amount={
+                  entry
+                    ? formatAmount(entry, foodUnit(entry))
+                    : suggestedProductAmount
+                }
+              />
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -490,4 +615,61 @@ function FeedRow({
   }
 
   return null;
+}
+
+/** Аккордеон рецепта: время, состав (ингредиенты + граммовки), шаги. */
+function RecipeDetailBody({ detail }: { detail: RecipeDetailState | undefined }) {
+  if (!detail || detail === "loading") {
+    return <div className="feed-detail-note">Загрузка рецепта…</div>;
+  }
+  if (detail === "error") {
+    return <div className="feed-detail-note">Не удалось загрузить рецепт.</div>;
+  }
+  return (
+    <>
+      <div className="feed-detail-meta num">
+        {formatTime(detail.timeMin)} · {detail.servings} порц.
+      </div>
+      <div className="feed-detail-sub">Состав</div>
+      <ul className="feed-detail-ings">
+        {detail.ingredients.map((ing, i) => (
+          <li key={i}>
+            <span className="grow">{ing.name}</span>
+            <span className="num">
+              {formatGrams(ing.grams)} {massUnit(ing.unit)}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {detail.steps.length > 0 && (
+        <>
+          <div className="feed-detail-sub">Приготовление</div>
+          <ol className="feed-detail-steps">
+            {detail.steps.map((step, i) => (
+              <li key={i}>{step}</li>
+            ))}
+          </ol>
+        </>
+      )}
+    </>
+  );
+}
+
+/** Аккордеон продукта (нет рецепта): компактная сводка КБЖУ + порция/граммовка. */
+function ProductDetailBody({
+  nutrients,
+  amount,
+}: {
+  nutrients: DiaryEntry["nutrients"];
+  amount: string | null;
+}) {
+  return (
+    <>
+      {amount && <div className="feed-detail-meta num">{amount}</div>}
+      <div className="feed-detail-macros num">
+        <b>{fmt(nutrients.kcal)}</b> ккал · Б {nutrients.protein} · Ж {nutrients.fat} · У{" "}
+        {nutrients.carb} · Кл {nutrients.fiber}
+      </div>
+    </>
+  );
 }

@@ -1709,9 +1709,9 @@ select.input {
 }
 .diary-meal-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
-  padding: 0 4px 8px;
+  padding: 0 4px 4px;
 }
 .diary-meal-head .diary-slot-name {
   font-size: 15px;
@@ -1721,18 +1721,10 @@ select.input {
   font-size: 13px;
   color: var(--label2);
 }
-.diary-add {
+/* Спецификатор .icon-btn.diary-add — перебить цвет базовой .icon-btn (--label2). */
+.diary-add.icon-btn {
   margin-left: auto;
-  border: 0;
-  background: none;
   color: var(--tint);
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  padding: 2px 4px;
-}
-.diary-add:active {
-  opacity: 0.6;
 }
 .diary-meal-empty {
   margin: 0;
@@ -1772,11 +1764,72 @@ select.input {
   display: flex;
   flex-direction: column;
 }
-/* Позиция-карточка (предложено/съедено): имя + КБЖУ сверху, действия — строкой. */
+/* Иконка-кнопка (тикет 11): тап-таргет ≥ 44pt, глиф 24×24 по центру, обводка
+   currentColor (как .tabbar svg). Наследует цвет от контекста. */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  background: none;
+  color: var(--label2);
+  cursor: pointer;
+  padding: 0;
+  flex: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.icon-btn svg {
+  width: 24px;
+  height: 24px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.icon-btn:active {
+  opacity: 0.5;
+}
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* Позиция-карточка (предложено/съедено): тело-toggle (раскрытие рецепта) слева,
+   иконки-действия справа; при раскрытии — аккордеон под строкой (тикет 11). */
 .diary-feed-item {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
+  position: relative;
+}
+.diary-feed-item + .diary-feed-item::before {
+  content: "";
+  position: absolute;
+  left: 16px;
+  right: 0;
+  top: 0;
+  height: 0.5px;
+  background: var(--sep);
+}
+.diary-feed-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 0 8px 0 16px;
+}
+.diary-feed-main {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  padding: 12px 0;
+}
+.diary-feed-main:active {
+  opacity: 0.6;
 }
 .diary-feed-name {
   font-size: 15px;
@@ -1790,6 +1843,11 @@ select.input {
   font-weight: 400;
   font-size: 13px;
 }
+.diary-feed-chev {
+  color: var(--label3);
+  font-size: 13px;
+  margin-left: 6px;
+}
 .diary-feed-check {
   color: var(--tint);
   font-weight: 700;
@@ -1802,14 +1860,69 @@ select.input {
 }
 .diary-feed-actions {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 2px;
+  flex: none;
 }
-.diary-feed-actions .btn {
-  width: auto;
-  flex: 1;
-  margin-bottom: 0;
-  padding: 8px 10px;
+/* «Съел» — первичное действие приёма: круг в тон акценту (off/on/busy). */
+.eat-btn {
+  color: var(--tint);
+}
+.eat-icon.is-busy {
+  animation: eat-spin 0.8s linear infinite;
+  transform-origin: center;
+}
+@keyframes eat-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Инлайн-аккордеон рецепта/продукта под строкой приёма. */
+.diary-feed-detail {
+  padding: 4px 16px 14px;
   font-size: 14px;
+  color: var(--label);
+}
+.feed-detail-note {
+  color: var(--label2);
+  font-size: 14px;
+}
+.feed-detail-meta {
+  color: var(--label2);
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+.feed-detail-sub {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--label2);
+  margin: 10px 0 4px;
+}
+.feed-detail-ings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.feed-detail-ings li {
+  display: flex;
+  gap: 12px;
+  padding: 3px 0;
+}
+.feed-detail-ings li .num {
+  color: var(--label2);
+  white-space: nowrap;
+}
+.feed-detail-steps {
+  margin: 0;
+  padding-left: 20px;
+}
+.feed-detail-steps li {
+  padding: 3px 0;
+  line-height: 1.4;
+}
+.feed-detail-macros {
+  color: var(--label2);
 }
 .diary-feed-regen {
   margin-top: 4px;
