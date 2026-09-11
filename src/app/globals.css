@@ -1755,6 +1755,59 @@ select.input {
   white-space: nowrap;
 }
 
+/* Единая лента дня (тикет 09): позиции со статусами + текстовые действия. */
+.diary-feed.is-busy {
+  opacity: 0.6;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.diary-feed-items {
+  display: flex;
+  flex-direction: column;
+}
+/* Позиция-карточка (предложено/съедено): имя + КБЖУ сверху, действия — строкой. */
+.diary-feed-item {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.diary-feed-name {
+  font-size: 15px;
+  font-weight: 500;
+}
+.diary-feed-item.is-eaten .diary-feed-name {
+  color: var(--label2);
+}
+.diary-feed-tag {
+  color: var(--label3);
+  font-weight: 400;
+  font-size: 13px;
+}
+.diary-feed-check {
+  color: var(--tint);
+  font-weight: 700;
+  margin-right: 6px;
+}
+.diary-feed-macros {
+  font-size: 13px;
+  color: var(--label2);
+  margin-top: 2px;
+}
+.diary-feed-actions {
+  display: flex;
+  gap: 8px;
+}
+.diary-feed-actions .btn {
+  width: auto;
+  flex: 1;
+  margin-bottom: 0;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+.diary-feed-regen {
+  margin-top: 4px;
+}
+
 /* Свайп-влево до кнопки «Удалить». */
 .swipe-row {
   position: relative;

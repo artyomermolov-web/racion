@@ -13,16 +13,20 @@ import {
   logSuggestion,
   regenerateRemainder,
   getLogSegments,
+  eatPlanMeal,
+  uneatPlanMeal,
   type DayLogResult,
   type AddEntryInput,
   type EffortFilter,
   type LogSuggestionInput,
-  type LogSuggestionResult,
   type SuggestionBlock,
   type LogSegments,
+  type EatPlanMealInput,
+  type EatPlanMealResult,
+  type UneatPlanMealInput,
 } from "@/lib/diary";
 import type { LoggedAmount } from "@/core/diary";
-import type { DisplayDay } from "@/lib/generator";
+import { buildDayForDate, type DisplayDay } from "@/lib/generator";
 
 /**
  * День дневника по локальной дате пользователя (YYYY-MM-DD). Дату определяет
@@ -62,6 +66,30 @@ export async function getLogSegmentsAction(): Promise<LogSegments> {
   return getLogSegments(user.id);
 }
 
+// ── Единая лента дня: план + слияние «съел» (тикет 09) ───────────────────────
+
+/** Предложенный план дня (детерминирован по дате) — предложенные приёмы ленты. */
+export async function getDayPlanAction(date: string): Promise<DisplayDay | null> {
+  const user = await requireUser();
+  return buildDayForDate(user.id, date);
+}
+
+/** Тап «съел» по предложенному приёму: запись + списание кладовки одной операцией. */
+export async function eatPlanMealAction(
+  input: EatPlanMealInput,
+): Promise<EatPlanMealResult> {
+  const user = await requireUser();
+  return eatPlanMeal(user.id, input);
+}
+
+/** Снять «съел» по приёму: удалить запись + вернуть списанную кладовку. */
+export async function uneatPlanMealAction(
+  input: UneatPlanMealInput,
+): Promise<DayLogResult> {
+  const user = await requireUser();
+  return uneatPlanMeal(user.id, input);
+}
+
 // ── «Что поесть сейчас» (тикет 10) ───────────────────────────────────────────
 
 /** Подсказки под остаток текущего приёма дня, с учётом фильтра усилий. */
@@ -73,10 +101,10 @@ export async function getSuggestionsAction(
   return getSuggestions(user.id, date, effort);
 }
 
-/** Лог подсказки в один тап (идемпотентно); возвращает день + обновлённый блок. */
+/** Лог подсказки в один тап (идемпотентно); возвращает обновлённый день. */
 export async function logSuggestionAction(
   input: LogSuggestionInput,
-): Promise<LogSuggestionResult> {
+): Promise<DayLogResult> {
   const user = await requireUser();
   return logSuggestion(user.id, input);
 }

@@ -2,6 +2,7 @@
 // Prisma/Next (spec.md, Testing Decisions). Снапшоты записей уже посчитаны на
 // момент записи — здесь только линейная свёртка по 5 отслеживаемым нутриентам.
 
+import type { Slot } from "@/core/generator";
 import {
   DIARY_NUTRIENT_KEYS,
   DIARY_SLOTS,
@@ -36,4 +37,13 @@ export function summarize(entries: readonly DiaryEntry[]): DayLog {
     return { slot, entries: slotEntries, totals: sumEntries(slotEntries) };
   });
   return { perSlot, totals: sumEntries(entries) };
+}
+
+/**
+ * Следующий незаполненный приём дня в каноническом порядке, иначе перекус — общий
+ * дефолт слота для дневника (быстрое добавление на экране и целевой приём подсказок
+ * на сервере считают его одинаково).
+ */
+export function nextEmptySlot(perSlot: readonly SlotSummary[]): Slot {
+  return perSlot.find((s) => s.entries.length === 0)?.slot ?? "snack";
 }

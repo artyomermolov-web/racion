@@ -6,6 +6,7 @@ import { Prisma, type DiaryEntry as DiaryEntryRow } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import {
   summarize,
+  nextEmptySlot,
   remaining,
   resolveAmount,
   suggestNextMeal,
@@ -35,6 +36,7 @@ import {
   type DisplayDay,
 } from "@/lib/generator";
 import { getAmountFood } from "@/lib/food";
+import { markMealEaten, unmarkMealEaten } from "@/lib/track";
 
 /** День дневника для UI: записи, разбивка по приёмам, сумма и прогресс. */
 export interface DayLogResult {
@@ -201,11 +203,6 @@ function filtersForEffort(effort: EffortFilter): SuggestFilters {
   return {};
 }
 
-/** Следующий незаполненный приём дня, иначе перекус (как дефолт слота в UI). */
-function nextEmptySlot(perSlot: SlotSummary[]): Slot {
-  return perSlot.find((s) => s.entries.length === 0)?.slot ?? "snack";
-}
-
 /** Остаток «добрать» по 5 нутриентам (из прогресса; знак сохраняется). */
 function remainingFrom(progress: DayProgress): DiaryNutrients {
   return {
@@ -310,14 +307,6 @@ export interface LogSuggestionInput {
   recipeId: string;
   /** Подобранная ядром порция. */
   portion: number;
-  /** Текущий фильтр усилий — для обновлённого блока в ответе. */
-  effort?: EffortFilter;
-}
-
-/** Ответ лога подсказки: обновлённый день + обновлённый блок подсказок. */
-export interface LogSuggestionResult {
-  day: DayLogResult;
-  suggestions: SuggestionBlock;
 }
 
 /**
@@ -325,12 +314,46 @@ export interface LogSuggestionResult {
  * по набору записей дня (ключ date|slot|suggestedRecipeId) решает «создать или
  * no-op», а БД-`@@unique([userId, date, slot, suggestedRecipeId])` — backstop от
  * гонки (повторный тап не создаёт дубль). Снапшот КБЖУ считается из текущих данных
- * рецепта (как у ручного лога). Возвращает свежий день и обновлённый блок.
+ * рецепта (как у ручного лога). Возвращает свежий день; блок подсказок клиент
+ * перезапрашивает сам по сдвигу остатка (refreshToken), поэтому здесь его не
+ * считаем — это была лишняя серверная работа на каждый тап.
  */
 export async function logSuggestion(
   userId: string,
   input: LogSuggestionInput,
-): Promise<LogSuggestionResult> {
+): Promise<DayLogResult> {
+  await logFoodOnce(userId, {
+    date: input.date,
+    slot: input.slot,
+    source: "recipe",
+    refId: input.recipeId,
+    amount: { kind: "servings", servings: input.portion },
+  });
+  return getDayLog(userId, input.date);
+}
+
+/** Параметры идемпотентного лога предложения/подсказки (общий скелет). */
+interface LogFoodOnceInput {
+  date: string;
+  slot: Slot;
+  source: DiarySource;
+  /** Recipe.id / Ingredient.id — он же пометка происхождения `suggestedRecipeId`. */
+  refId: string;
+  amount: LoggedAmount;
+}
+
+/**
+ * Идемпотентно создаёт запись дневника из предложения/подсказки (общий код лога в
+ * один тап для `logSuggestion` и `eatPlanMeal`). Ключ идемпотентности —
+ * date|slot|suggestedRecipeId=refId: чистый `logDecision` решает «создать или
+ * no-op», а БД-`@@unique([userId,date,slot,suggestedRecipeId])` — backstop от гонки
+ * (повторный тап → P2002, не ошибка). Снапшот КБЖУ — из текущих данных еды (рецепт
+ * → порции, продукт → граммы). Возвращает true, если запись создана в этом вызове.
+ */
+async function logFoodOnce(
+  userId: string,
+  input: LogFoodOnceInput,
+): Promise<boolean> {
   const rows = await prisma.diaryEntry.findMany({
     where: { userId, date: input.date },
   });
@@ -338,51 +361,144 @@ export async function logSuggestion(
     existing: rows.map(toEntry),
     date: input.date,
     slot: input.slot,
-    suggestedRecipeId: input.recipeId,
+    suggestedRecipeId: input.refId,
+  });
+  if (!decision.create) return false;
+
+  const food = await getAmountFood(input.source, input.refId, userId);
+  if (!food) throw new Error("Еда не найдена или недоступна");
+  const { grams, servings, nutrients } = resolveAmount(food, input.amount);
+  try {
+    await prisma.diaryEntry.create({
+      data: {
+        userId,
+        date: input.date,
+        slot: input.slot,
+        source: input.source,
+        refId: input.refId,
+        grams,
+        servings,
+        kcal: nutrients.kcal,
+        protein: nutrients.protein,
+        fat: nutrients.fat,
+        carb: nutrients.carb,
+        fiber: nutrients.fiber,
+        suggestedRecipeId: input.refId,
+      },
+    });
+    return true;
+  } catch (e) {
+    // Гонка двойного тапа: уникальный индекс уже поймал дубль — это и есть
+    // идемпотентность, не ошибка (как guard двойного списания кладовки).
+    if (
+      !(e instanceof Prisma.PrismaClientKnownRequestError) ||
+      e.code !== "P2002"
+    ) {
+      throw e;
+    }
+    return false;
+  }
+}
+
+// ── Единая лента: слияние двух «съел» (тикет 09, spec решение 01) ────────────
+
+/** Параметры тапа «съел» по предложенному приёму ленты дня. */
+export interface EatPlanMealInput {
+  /** Локальная дата пользователя, YYYY-MM-DD. */
+  date: string;
+  slot: Slot;
+  /** Рецепт или кастом-продукт приёма. */
+  source: DiarySource;
+  /** Recipe.id (source=recipe) или Ingredient.id (source=ingredient). */
+  refId: string;
+  /** Порция приёма: порции рецепта или кратность 100 г для продукта. */
+  portion: number;
+  /** Стабильный ключ приёма для идемпотентного списания кладовки (lib/mealKey). */
+  mealKey: string;
+}
+
+/** Результат «съел»: обновлённый день + флаг «кладовки не хватило» (для рецепта). */
+export interface EatPlanMealResult {
+  day: DayLogResult;
+  /** true — запас не покрыл потребность; списали что было (spec US 29). */
+  shortfall: boolean;
+}
+
+/**
+ * Тап «съел» по предложенному приёму — две ортогональные стороны одной операции
+ * (spec решение 01): (1) запись `DiaryEntry` (питание/остаток дня) и (2) списание
+ * кладовки `markMealEaten` (только рецепт — у продукта нет состава). Идемпотентность
+ * обеих держат существующие уникальные индексы: `DiaryEntry(userId,date,slot,
+ * suggestedRecipeId)` и `MealWriteOff(userId,mealKey)` — повторный тап не задваивает
+ * ни запись, ни списание. Снапшот КБЖУ — из текущих данных еды (как ручной лог):
+ * рецепт → `portion` порций, продукт → `portion`×100 г. `suggestedRecipeId=refId`
+ * связывает запись с предложением, чтобы лента показала приём как `eaten`.
+ */
+export async function eatPlanMeal(
+  userId: string,
+  input: EatPlanMealInput,
+): Promise<EatPlanMealResult> {
+  // Сторона питания: идемпотентная запись `DiaryEntry`. Количество зависит от вида
+  // еды — рецепт в порциях, продукт в граммах (порция продукта = кратность 100 г).
+  const amount: LoggedAmount =
+    input.source === "recipe"
+      ? { kind: "servings", servings: input.portion }
+      : { kind: "grams", grams: input.portion * 100 };
+  await logFoodOnce(userId, {
+    date: input.date,
+    slot: input.slot,
+    source: input.source,
+    refId: input.refId,
+    amount,
   });
 
-  if (decision.create) {
-    const food = await getAmountFood("recipe", input.recipeId, userId);
-    if (!food) throw new Error("Рецепт не найден или недоступен");
-    const { servings, nutrients } = resolveAmount(food, {
-      kind: "servings",
-      servings: input.portion,
+  // Сторона кладовки: списываем только под рецепт (у продукта нет состава).
+  // markMealEaten идемпотентен по mealKey — повторный тап не вычитает лоты дважды.
+  let shortfall = false;
+  if (input.source === "recipe") {
+    const res = await markMealEaten(userId, {
+      key: input.mealKey,
+      recipeId: input.refId,
+      portion: input.portion,
     });
-    try {
-      await prisma.diaryEntry.create({
-        data: {
-          userId,
-          date: input.date,
-          slot: input.slot,
-          source: "recipe",
-          refId: input.recipeId,
-          grams: null,
-          servings,
-          kcal: nutrients.kcal,
-          protein: nutrients.protein,
-          fat: nutrients.fat,
-          carb: nutrients.carb,
-          fiber: nutrients.fiber,
-          suggestedRecipeId: input.recipeId,
-        },
-      });
-    } catch (e) {
-      // Гонка двойного тапа: уникальный индекс уже поймал дубль — это и есть
-      // идемпотентность, не ошибка (как guard двойного списания кладовки).
-      if (
-        !(e instanceof Prisma.PrismaClientKnownRequestError) ||
-        e.code !== "P2002"
-      ) {
-        throw e;
-      }
-    }
+    shortfall = Object.keys(res.shortfall).length > 0;
   }
 
-  const [day, suggestions] = await Promise.all([
-    getDayLog(userId, input.date),
-    getSuggestions(userId, input.date, input.effort ?? "cook"),
-  ]);
-  return { day, suggestions };
+  return { day: await getDayLog(userId, input.date), shortfall };
+}
+
+/** Параметры снятия «съел» по приёму ленты (обратимо: запись + возврат лотов). */
+export interface UneatPlanMealInput {
+  date: string;
+  slot: Slot;
+  /** Происхождение записи (оно же refId предложения). */
+  suggestedRecipeId: string;
+  /** Ключ приёма для возврата лотов (должен совпадать с ключом списания). */
+  mealKey: string;
+  source: DiarySource;
+}
+
+/**
+ * Снятие «съел» по предложенному приёму — зеркало `eatPlanMeal`: удаляет запись
+ * `DiaryEntry` (по связке date|slot|suggestedRecipeId) и возвращает списанную
+ * кладовку `unmarkMealEaten` (только рецепт). Нет записи/списания по ключу → no-op
+ * на соответствующей стороне. Возвращает обновлённый день.
+ */
+export async function uneatPlanMeal(
+  userId: string,
+  input: UneatPlanMealInput,
+): Promise<DayLogResult> {
+  const row = await prisma.diaryEntry.findFirst({
+    where: {
+      userId,
+      date: input.date,
+      slot: input.slot,
+      suggestedRecipeId: input.suggestedRecipeId,
+    },
+  });
+  if (row) await prisma.diaryEntry.delete({ where: { id: row.id } });
+  if (input.source === "recipe") await unmarkMealEaten(userId, input.mealKey);
+  return getDayLog(userId, input.date);
 }
 
 /**

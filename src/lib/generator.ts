@@ -14,6 +14,7 @@ import {
   replaceMealInWeek,
   scalePortion,
   sumNutrients,
+  hashString,
   recipeKeywords,
   resolvePersonalization,
   productCandidates,
@@ -42,6 +43,11 @@ export interface DayMeal {
   timeMin: number;
   portion: number;
   nutrients: FoodNutrients;
+  /**
+   * Что за приём: рецепт или кастом-продукт (recurring). Нужно дневнику (тикет 09):
+   * «съел» по рецепту списывает кладовку, по продукту — нет; у продукта нет «заменить».
+   */
+  source: "recipe" | "ingredient";
 }
 
 /** Собранный день для UI: приёмы, сумма за день и цель, под которую собирали. */
@@ -117,6 +123,7 @@ export function nutrientRangesFromNorm(norm: NormRecord): NutrientRanges {
 interface RecipeMeta {
   name: string;
   timeMin: number;
+  source: "recipe" | "ingredient";
 }
 
 interface RecipePool {
@@ -196,7 +203,7 @@ async function loadRecipePool(userId: string): Promise<RecipePool> {
     };
     merged.push(gr);
     byId.set(r.id, gr);
-    meta.set(r.id, { name: r.name, timeMin: r.timeMin });
+    meta.set(r.id, { name: r.name, timeMin: r.timeMin, source: "recipe" });
   }
 
   // Своя версия вытесняет базовый рецепт из кандидатов (тикет 17).
@@ -214,7 +221,8 @@ async function loadRecipePool(userId: string): Promise<RecipePool> {
   for (const pc of productCandidates(customProducts, customProducts.map((p) => p.id))) {
     byId.set(pc.id, pc);
   }
-  for (const p of productRows) meta.set(p.id, { name: p.name, timeMin: 0 });
+  for (const p of productRows)
+    meta.set(p.id, { name: p.name, timeMin: 0, source: "ingredient" });
 
   return { recipes, customProducts, meta, byId };
 }
@@ -246,6 +254,7 @@ function toDayMeal(item: PlanItem, meta: Map<string, RecipeMeta>): DayMeal {
     timeMin: m?.timeMin ?? 0,
     portion: item.portion,
     nutrients: item.nutrients,
+    source: m?.source ?? "recipe",
   };
 }
 
@@ -308,6 +317,21 @@ export async function buildDay(
     totals: day.totals,
     target,
   };
+}
+
+/**
+ * Предложенный план дня для Дневника (тикет 09). План не персистится, но должен
+ * быть СТАБИЛЕН между перезагрузками одного дня, иначе связка «предложение ↔
+ * запись» (suggestedRecipeId) рвётся и съеденный приём из `eaten` стал бы `extra`.
+ * Поэтому seed детерминирован по (userId|date) — тот же день каждый раз. Замена/
+ * удаление/перегенерация остатка живут в состоянии клиента (как на /home), при
+ * перезагрузке лента возвращается к этому плану, а съеденное берётся из записей.
+ */
+export async function buildDayForDate(
+  userId: string,
+  date: string,
+): Promise<DisplayDay | null> {
+  return buildDay(userId, hashString(`${userId}|${date}`));
 }
 
 /**

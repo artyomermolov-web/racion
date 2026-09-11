@@ -51,13 +51,19 @@ export function SuggestionsBlock({
   const [remainder, setRemainder] = useState<DayMeal[] | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [regenPending, setRegenPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const reqId = useRef(0);
 
-  // Перезапрос блока при смене дня/фильтра/остатка. Гонку гасим по reqId.
+  // Перезапрос блока при смене дня/фильтра/остатка. Гонку гасим по reqId. Заодно
+  // сбрасываем прежний «вариант на остаток дня» и ошибку: снимок remainder валиден
+  // только под тот остаток, при котором собран, — смена дня/фильтра/остатка его
+  // обесценивает (иначе показали бы приёмы под устаревший остаток).
   useEffect(() => {
     const id = ++reqId.current;
     setLoading(true);
+    setRemainder(null);
+    setError(null);
     getSuggestionsAction(date, effort).then((res) => {
       if (id === reqId.current) {
         setBlock(res);
@@ -70,29 +76,39 @@ export function SuggestionsBlock({
   const log = (slot: SuggestionBlock["slot"], meal: SuggestedMeal | DayMeal) => {
     if (pending) return;
     setBusyId(meal.recipeId);
+    setError(null);
     startTransition(async () => {
-      const res = await logSuggestionAction({
-        date,
-        slot,
-        recipeId: meal.recipeId,
-        portion: meal.portion,
-        effort,
-      });
-      // Обновлённый день двигает остаток; refreshToken сменится и блок обновится.
-      onDayResult(res.day);
-      // Вариант остатка, если был показан, убираем после лога (он ушёл в дневник).
-      setRemainder((r) => r?.filter((m) => m.recipeId !== meal.recipeId) ?? null);
-      setBusyId(null);
+      try {
+        const res = await logSuggestionAction({
+          date,
+          slot,
+          recipeId: meal.recipeId,
+          portion: meal.portion,
+        });
+        // Обновлённый день двигает остаток; refreshToken сменится, и эффект выше
+        // перезапросит блок и сбросит устаревший remainder.
+        onDayResult(res);
+      } catch {
+        setError("Не удалось записать. Попробуйте ещё раз.");
+      } finally {
+        setBusyId(null);
+      }
     });
   };
 
   /** Пересобрать остаток дня: свежий набор приёмов под текущий остаток. */
   const regenerate = () => {
+    setError(null);
     setRegenPending(true);
     startTransition(async () => {
-      const fresh = await regenerateRemainderAction(date, freshSeed());
-      setRemainder(fresh?.meals ?? []);
-      setRegenPending(false);
+      try {
+        const fresh = await regenerateRemainderAction(date, freshSeed());
+        setRemainder(fresh?.meals ?? []);
+      } catch {
+        setError("Не удалось пересобрать остаток. Попробуйте ещё раз.");
+      } finally {
+        setRegenPending(false);
+      }
     });
   };
 
@@ -116,6 +132,12 @@ export function SuggestionsBlock({
           </button>
         ))}
       </div>
+
+      {error && (
+        <div className="form-error" role="alert">
+          {error}
+        </div>
+      )}
 
       {loading && !block ? (
         <div className="suggest-loading">Подбираем варианты…</div>

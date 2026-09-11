@@ -45,9 +45,12 @@ export function DiaryHomeRow() {
 
   useEffect(() => {
     let live = true;
-    getDayLogAction(todayKey()).then((res) => {
-      if (live) setData(res);
-    });
+    getDayLogAction(todayKey())
+      .then((res) => {
+        if (live) setData(res);
+      })
+      // Строка опциональна — при ошибке просто остаётся скрытой (data=null).
+      .catch(() => {});
     return () => {
       live = false;
     };
