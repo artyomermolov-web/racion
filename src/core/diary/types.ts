@@ -114,6 +114,59 @@ export interface DayProgress {
   laggingMacro: Macro | null;
 }
 
+// ── Лента дня: слияние плана и факта (тикет 08) ──────────────────────────────
+
+/**
+ * Состояние приёма в ленте дня (spec.md, тикет 01):
+ *  • `suggested` — приём сгенерированного плана без соответствующей записи (ещё не съеден);
+ *  • `eaten` — под плановый приём есть запись `DiaryEntry` (съедено — одна позиция, не дубль);
+ *  • `extra` — съедено вне плана (запись есть, плановой позиции под неё не было).
+ */
+export type MealStatus = "suggested" | "eaten" | "extra";
+
+/**
+ * Предложенный приём сгенерированного плана — вход сборки ленты. План не
+ * персистится, поэтому это проекция на лету: `recipeId` — рецепт предложения (он
+ * же связка с записью через `DiaryEntry.suggestedRecipeId`), `nutrients` —
+ * снапшот КБЖУ порции (5 отслеживаемых, натрий дневник не трогает).
+ */
+export interface PlanMeal {
+  slot: Slot;
+  recipeId: string;
+  portion: number;
+  nutrients: DiaryNutrients;
+}
+
+/**
+ * Одна позиция ленты дня. Ровно одно из двух происхождений задаёт статус:
+ *  • `suggestion` есть, `entry` нет → `suggested` (чистое предложение);
+ *  • `suggestion` есть, `entry` есть → `eaten` (плановый приём съеден, одна позиция);
+ *  • `suggestion` нет, `entry` есть → `extra` (съедено вне плана / ручной лог).
+ * `nutrients` — КБЖУ позиции: съедено → снапшот записи, иначе → КБЖУ предложения.
+ */
+export interface DayFeedItem {
+  status: MealStatus;
+  slot: Slot;
+  /** Плановое предложение позиции (`suggested`/`eaten`), иначе null (`extra`). */
+  suggestion: PlanMeal | null;
+  /** Запись дневника под позицией (`eaten`/`extra`), иначе null (`suggested`). */
+  entry: DiaryEntry | null;
+  nutrients: DiaryNutrients;
+}
+
+/** Один приём ленты: его позиции (в порядке плана, затем extra) + подытог КБЖУ. */
+export interface DayFeedSlot {
+  slot: Slot;
+  items: DayFeedItem[];
+  totals: DiaryNutrients;
+}
+
+/** Лента дня: все 4 приёма в каноническом порядке (включая пустые) + сумма за день. */
+export interface DayFeed {
+  perSlot: DayFeedSlot[];
+  totals: DiaryNutrients;
+}
+
 /**
  * Вариант подсказки «Что поесть сейчас» (тикет 10). Объявлен заранее; движок
  * подсказок (suggest.ts) строится поверх /core/generator в своём тикете.
