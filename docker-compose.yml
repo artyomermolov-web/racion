@@ -2,9 +2,10 @@
 #
 #   docker compose up -d --build
 #
-# ВАЖНО (переключение SQLite → PostgreSQL, решение 10): перед сборкой смените
-# провайдера в prisma/schema.prisma с `sqlite` на `postgresql`. DATABASE_URL уже
-# указывает на контейнер Postgres ниже; больше в схеме менять ничего не нужно.
+# Turnkey: ручных правок не нужно. Провайдер БД переключается на PostgreSQL сам
+# при сборке образа (sed в Dockerfile); в git схема остаётся на SQLite для dev.
+# DATABASE_URL для приложения задан ниже (сервис `db`). Схему на старте
+# разворачивает `prisma db push`, каталог наполняет идемпотентный сид.
 # HTTPS — за обратным прокси (Caddy c авто-TLS или nginx+certbot) на VPS.
 services:
   db:
