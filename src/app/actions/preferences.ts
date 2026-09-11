@@ -17,7 +17,7 @@ import { ALL_SLOTS, type Slot } from "@/core/generator";
 
 /** Пути, зависящие от предпочтений: план и экран вкусов. */
 function revalidatePreferenceViews(recipeId?: string) {
-  revalidatePath("/home");
+  revalidatePath("/dnevnik/nedelya");
   revalidatePath("/profil/vkusy");
   if (recipeId) revalidatePath(`/baza/recept/${recipeId}`);
 }

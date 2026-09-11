@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { LargeTitleHeader } from "@/components/ios/LargeTitleHeader";
 import { ThemeToggle } from "@/components/ios/ThemeToggle";
@@ -18,7 +19,39 @@ export default async function DiaryPage() {
 
   return (
     <>
-      <LargeTitleHeader title="Дневник" trailing={<ThemeToggle />} />
+      <LargeTitleHeader
+        title="Дневник"
+        trailing={
+          <div className="nav-actions">
+            <Link
+              href="/dnevnik/nedelya"
+              className="nav-btn"
+              aria-label="Планирование недели"
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                <rect
+                  x="3"
+                  y="4"
+                  width="18"
+                  height="17"
+                  rx="2"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                />
+                <path
+                  d="M3 9h18M8 2v4M16 2v4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </Link>
+            <ThemeToggle />
+          </div>
+        }
+      />
       <DiaryScreen ingredients={ingredients} recipes={recipes} />
     </>
   );

@@ -5,7 +5,7 @@ import { loginAction } from "@/app/actions/auth";
 import { AuthForm } from "./AuthForm";
 
 export default async function LoginPage() {
-  if (await getCurrentUser()) redirect("/home");
+  if (await getCurrentUser()) redirect("/dnevnik");
 
   return (
     <div className="app">

@@ -598,6 +598,18 @@ export async function activeNorm(userId: string) {
   });
 }
 
+/**
+ * Стабильный seed недели пользователя (userId + дата + "week"): экран недели,
+ * список покупок и любой другой потребитель берут ОДНУ И ТУ ЖЕ неделю. Seed не
+ * меняется при перезагрузках — перегенерация только явной кнопкой. Дата берётся
+ * в UTC (ISO), как исторически на бывшей «Меню», чтобы неделя совпадала у всех
+ * потребителей.
+ */
+export function currentWeekSeed(userId: string): number {
+  const dateKey = new Date().toISOString().slice(0, 10);
+  return hashString(userId + dateKey + "week");
+}
+
 /** Собирает неделю под норму пользователя. null — если норма ещё не рассчитана. */
 export async function buildWeek(
   userId: string,

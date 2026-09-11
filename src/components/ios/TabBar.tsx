@@ -12,15 +12,6 @@ interface Tab {
 
 const TABS: Tab[] = [
   {
-    href: "/home",
-    label: "Меню",
-    icon: (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M4 13h6V4H4zM14 20h6v-9h-6zM14 4v5h6V4zM4 20h6v-5H4z" />
-      </svg>
-    ),
-  },
-  {
     href: "/dnevnik",
     label: "Дневник",
     icon: (

@@ -5,7 +5,7 @@ import { registerAction } from "@/app/actions/auth";
 import { AuthForm } from "@/app/login/AuthForm";
 
 export default async function RegisterPage() {
-  if (await getCurrentUser()) redirect("/home");
+  if (await getCurrentUser()) redirect("/dnevnik");
 
   return (
     <div className="app">

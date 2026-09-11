@@ -63,7 +63,7 @@ export async function registerAction(
   }
 
   await createSession(user.id);
-  redirect("/home");
+  redirect("/dnevnik");
 }
 
 export async function loginAction(
@@ -91,7 +91,7 @@ export async function loginAction(
   }
 
   await createSession(user.id);
-  redirect("/home");
+  redirect("/dnevnik");
 }
 
 export async function logoutAction(): Promise<void> {

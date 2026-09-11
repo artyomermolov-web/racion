@@ -30,7 +30,7 @@ import { applyRecurring, type RecurringFrequency } from "@/lib/preferences";
 function revalidateOwnViews() {
   revalidatePath("/svoe");
   revalidatePath("/baza");
-  revalidatePath("/home");
+  revalidatePath("/dnevnik/nedelya");
 }
 
 function field(formData: FormData, key: string): string | undefined {

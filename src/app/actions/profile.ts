@@ -98,7 +98,7 @@ export async function saveProfileAction(
   });
 
   revalidatePath("/profil");
-  revalidatePath("/home");
+  revalidatePath("/dnevnik/nedelya");
   return { errors: {}, values: draft, saved: true };
 }
 
@@ -149,6 +149,6 @@ export async function saveTargetsAction(
   });
 
   revalidatePath("/profil");
-  revalidatePath("/home");
+  revalidatePath("/dnevnik/nedelya");
   return { errors: {}, values: draft, saved: true };
 }

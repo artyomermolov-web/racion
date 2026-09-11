@@ -4,9 +4,8 @@
 // сумма ₽) — в ядре; здесь только доступ к данным и проекция для UI.
 import "server-only";
 import { prisma } from "@/lib/db";
-import { buildWeek } from "@/lib/generator";
+import { buildWeek, currentWeekSeed } from "@/lib/generator";
 import { realOnHandForUser } from "@/lib/pantry";
-import { hashString } from "@/core/generator";
 import {
   buildShoppingList,
   saleQuantity,
@@ -75,17 +74,6 @@ function planItemsFromWeek(
   days: { meals: { recipeId: string; portion: number }[] }[],
 ): ShoppingPlanItem[] {
   return days.flatMap((d) => d.meals.map((m) => ({ recipeId: m.recipeId, portion: m.portion })));
-}
-
-/**
- * Стабильный seed недели пользователя — тот же, что на главной (userId + дата +
- * "week"): и главная, и список покупок берут ОДНУ И ТУ ЖЕ неделю. Кнопка «обновить
- * из плана» на экране списка тоже зовёт этот seed — это ре-синк с текущим планом,
- * а не случайная перегенерация (иначе список разошёлся бы с неделей на главной).
- */
-export function currentWeekSeed(userId: string): number {
-  const dateKey = new Date().toISOString().slice(0, 10);
-  return hashString(userId + dateKey + "week");
 }
 
 /**
