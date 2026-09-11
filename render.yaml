@@ -1,0 +1,33 @@
+# Render Blueprint (infra-as-code): «Рацион» — Docker-веб-сервис + PostgreSQL.
+# Публичный деплой в облако (тикеты 10/21), альтернатива локальному docker-compose.
+#
+# Как развернуть:
+#   1. Зарегистрируйтесь на https://render.com (аккаунт создаёте вы — я не могу).
+#   2. Dashboard → New → Blueprint → подключите репозиторий
+#      github.com/artyomermolov-web/racion (ветка main).
+#   3. Render прочитает этот файл, поднимет Postgres и приложение и сам прокинет
+#      DATABASE_URL. Первая сборка (Docker) — несколько минут; дальше публичный
+#      HTTPS-URL вида https://racion.onrender.com.
+#
+# Провайдер БД в образе переключается на postgresql сам при сборке (sed в
+# Dockerfile), схему на старте разворачивает `prisma db push`, каталог — сид.
+# NODE_ENV=production включает secure-cookie (Render отдаёт HTTPS).
+
+databases:
+  - name: racion-db
+    plan: free # бесплатный Postgres (срок ~90 дней, затем нужен платный план)
+
+services:
+  - type: web
+    name: racion
+    runtime: docker
+    plan: free # бесплатный веб-сервис (засыпает после ~15 мин простоя, холодный старт)
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /login # /login отдаёт 200 (/ редиректит 307)
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: racion-db
+          property: connectionString
+      - key: NODE_ENV
+        value: production
