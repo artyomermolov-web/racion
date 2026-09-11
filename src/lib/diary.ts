@@ -10,6 +10,9 @@ import {
   resolveAmount,
   suggestNextMeal,
   logDecision,
+  recentRefs,
+  frequentIngredientRefs,
+  favoriteRefs,
   type DiaryEntry,
   type DiarySource,
   type DayProgress,
@@ -19,6 +22,7 @@ import {
   type SuggestedMeal,
   type SuggestCandidate,
   type SuggestFilters,
+  type SegmentRef,
 } from "@/core/diary";
 import type { FoodNutrients } from "@/core/nutrition";
 import type { Slot } from "@/core/generator";
@@ -383,4 +387,73 @@ export async function regenerateRemainder(
     .map((e) => e.refId);
 
   return regenerateDiaryRemainder(userId, consumed, consumedRecipeIds, seed);
+}
+
+// ── Сегменты потока добавления: Недавнее / Избранное / Своё (тикет 11) ─────────
+
+/** Окно последних записей для агрегатов Недавнего/частых (ограничение выборки). */
+const SEGMENT_SCAN = 500;
+
+/**
+ * Ссылки сегментов шита добавления (кроме Поиска — он работает по уже загруженной
+ * базе еды). Возвращаем именно ссылки (source+refId): имя/КБЖУ/пометку «Своё» UI
+ * берёт из уже загруженных продуктов/рецептов (getIngredients/getRecipes), снапшот
+ * дубля данных не нужен. Упорядочивание (новизна/частота) — в чистом ядре.
+ * - Недавнее: уникальная залогированная еда, свежая первой.
+ * - Избранное: избранные рецепты (FavoriteRecipe) + частые продукты из лога.
+ * - Своё: кастом-еда пользователя (isCustom+ownerUserId), свежая первой.
+ */
+export interface LogSegments {
+  recent: SegmentRef[];
+  favorites: SegmentRef[];
+  own: SegmentRef[];
+}
+
+export async function getLogSegments(userId: string): Promise<LogSegments> {
+  const [entries, favorites, ownIngredients, ownRecipes] = await Promise.all([
+    prisma.diaryEntry.findMany({
+      where: { userId },
+      select: { source: true, refId: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
+      take: SEGMENT_SCAN,
+    }),
+    prisma.favoriteRecipe.findMany({
+      where: { userId },
+      select: { recipeId: true },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.ingredient.findMany({
+      where: { isCustom: true, ownerUserId: userId },
+      select: { id: true },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.recipe.findMany({
+      where: { isCustom: true, ownerUserId: userId },
+      select: { id: true },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
+
+  const logged = entries.map((e) => ({
+    source: e.source as DiarySource,
+    refId: e.refId,
+    at: e.createdAt.getTime(),
+  }));
+
+  const recent = recentRefs(logged);
+  const frequentProducts = frequentIngredientRefs(logged);
+  const favoriteList = favoriteRefs(
+    favorites.map((f) => f.recipeId),
+    frequentProducts,
+  );
+  // Кастом-рецепты перед кастом-продуктами; внутри — свежие первыми (orderBy выше).
+  const own: SegmentRef[] = [
+    ...ownRecipes.map((r) => ({ source: "recipe" as const, refId: r.id })),
+    ...ownIngredients.map((i) => ({
+      source: "ingredient" as const,
+      refId: i.id,
+    })),
+  ];
+
+  return { recent, favorites: favoriteList, own };
 }

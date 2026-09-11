@@ -12,12 +12,14 @@ import {
   getSuggestions,
   logSuggestion,
   regenerateRemainder,
+  getLogSegments,
   type DayLogResult,
   type AddEntryInput,
   type EffortFilter,
   type LogSuggestionInput,
   type LogSuggestionResult,
   type SuggestionBlock,
+  type LogSegments,
 } from "@/lib/diary";
 import type { LoggedAmount } from "@/core/diary";
 import type { DisplayDay } from "@/lib/generator";
@@ -52,6 +54,12 @@ export async function updateEntryAction(
 export async function deleteEntryAction(id: string): Promise<DayLogResult> {
   const user = await requireUser();
   return deleteEntry(user.id, id);
+}
+
+/** Ссылки сегментов шита добавления: Недавнее / Избранное / Своё (тикет 11). */
+export async function getLogSegmentsAction(): Promise<LogSegments> {
+  const user = await requireUser();
+  return getLogSegments(user.id);
 }
 
 // ── «Что поесть сейчас» (тикет 10) ───────────────────────────────────────────
