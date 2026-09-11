@@ -9,7 +9,8 @@ export default defineConfig({
   },
   test: {
     // Ядро тестируется без БД и без UI, на in-memory-фикстурах (spec.md).
-    include: ["src/core/**/*.test.ts"],
+    // Плюс чистые мапперы семьи src/lib/food-labels (тикет 12) — тоже без БД/UI.
+    include: ["src/core/**/*.test.ts", "src/lib/**/*.test.ts"],
     environment: "node",
   },
 });

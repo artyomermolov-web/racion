@@ -36,6 +36,40 @@ export const EQUIPMENT_LABELS: Record<string, string> = {
   none: "Без техники",
 };
 
+/**
+ * Значок группы продукта (эмодзи-плейсхолдер, тикет 12) — визуальная опора для
+ * пикера добавления «как в Yazio». Реальных фото нет (Out of scope), значок это
+ * эмодзи по группе. Ключи — 13 групп сида (prisma/seed-data.ts, объект G);
+ * канонический маппинг из spec.md.
+ */
+export const GROUP_ICONS: Record<string, string> = {
+  cereal: "🌾",
+  dairy: "🥛",
+  meat: "🍗",
+  fish: "🐟",
+  veg: "🥦",
+  fruit: "🍎",
+  grocery: "🫙",
+  egg: "🥚",
+  nuts: "🥜",
+  bread: "🍞",
+  beverage: "🥤",
+  canned: "🥫",
+  frozen: "🧊",
+};
+
+/** Значок для рецепта (группы нет) и неизвестной/пустой группы — тарелка. */
+export const GROUP_ICON_FALLBACK = "🍽️";
+
+/**
+ * Тотальная функция «группа → значок»: любая известная группа даёт свой значок,
+ * рецепт (группы нет) и неизвестная/пустая группа → fallback (тарелка).
+ */
+export function groupIcon(group?: string | null): string {
+  if (!group) return GROUP_ICON_FALLBACK;
+  return GROUP_ICONS[group] ?? GROUP_ICON_FALLBACK;
+}
+
 const DIFFICULTY_LABELS: Record<number, string> = {
   1: "Просто",
   2: "Средне",

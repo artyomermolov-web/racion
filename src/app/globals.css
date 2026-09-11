@@ -497,6 +497,21 @@ select.input {
 .food-row {
   align-items: flex-start;
 }
+/* Значок группы продукта (тикет 12): эмодзи-плейсхолдер по группе в скруглённом
+   контейнере — тот же скруглённый визуальный язык HIG, что у иконок-действий
+   тикета 11 (у тех контейнер прозрачный, здесь — заливка var(--fill) под эмодзи). */
+.food-icon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--fill);
+  font-size: 22px;
+  line-height: 1;
+}
 .food-title {
   font-size: 16px;
   line-height: 1.3;
