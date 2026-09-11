@@ -24,14 +24,7 @@ import type { DiaryEntry, SlotSummary } from "@/core/diary";
 import type { Slot } from "@/core/generator";
 import { LogSheet, type LogSheetMode } from "./LogSheet";
 import { SuggestionsBlock } from "./SuggestionsBlock";
-
-/** Локальная дата → YYYY-MM-DD (по локальным полям, не через UTC/toISOString). */
-function toKey(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
+import { toKey } from "@/lib/local-date";
 
 /** Сдвиг даты на delta дней (арифметика по локальной полуночи, DST-безопасно). */
 function shiftKey(key: string, delta: number): string {

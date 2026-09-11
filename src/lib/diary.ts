@@ -233,6 +233,14 @@ export interface SuggestionBlock {
   /** Приём, под который подобраны варианты (для лога в один тап). */
   slot: Slot;
   meals: SuggestedMeal[];
+  /**
+   * Пустой список — по причине «нечего предложить в принципе» (пустая база
+   * рецептов или всё отсеяно жёсткими ограничениями), а не текущим фильтром
+   * усилий. Разводит два честных текста в UI (тикет 12): «наполните базу /
+   * ослабьте ограничения» vs «смените чипсы усилий». При непустом `meals` —
+   * всегда false.
+   */
+  baseEmpty: boolean;
 }
 
 /**
@@ -255,7 +263,11 @@ export async function getSuggestions(
   ]);
 
   const slot = nextEmptySlot(day.perSlot);
-  if (!day.progress || !ctx) return { slot, meals: [] };
+  // Защитный инвариант: без активной нормы остаток считать не от чего. UI сюда не
+  // доходит — блок подсказок монтируется только при `data.progress` (DiaryScreen),
+  // а «заполни профиль» показывает родитель (US 36). `baseEmpty: true` здесь —
+  // просто «предлагать нечего», не путь для честного текста про базу.
+  if (!day.progress || !ctx) return { slot, meals: [], baseEmpty: true };
 
   const candidates: SuggestCandidate[] = ctx.candidates.map((c) => ({
     ...c,
@@ -266,19 +278,27 @@ export async function getSuggestions(
     .map((e) => e.suggestedRecipeId)
     .filter((id): id is string => id !== null);
 
-  const meals = suggestNextMeal({
+  const base = {
     remaining: remainingFrom(day.progress),
     laggingMacro: day.progress.laggingMacro,
     slot,
     candidates,
     scale: scaleFrom(day.progress),
-    filters: filtersForEffort(effort),
     constraints: ctx.constraints,
     preferences: ctx.preferences,
     excludeRecipeIds,
     seed: hashString(`${userId}|${date}|${slot}`),
-  });
-  return { slot, meals };
+  };
+
+  const meals = suggestNextMeal({ ...base, filters: filtersForEffort(effort) });
+  // Пусто под текущим фильтром — проверяем, есть ли вообще что предложить без
+  // фильтра усилий. Если и без него пусто → база пуста или всё под жёсткими
+  // ограничениями (честный текст), иначе — лишь фильтр усилий ничего не оставил.
+  const baseEmpty =
+    meals.length === 0 &&
+    suggestNextMeal({ ...base, filters: {}, limit: 1 }).length === 0;
+
+  return { slot, meals, baseEmpty };
 }
 
 /** Параметры лога подсказки (тап «съел» по карточке «Что поесть сейчас»). */

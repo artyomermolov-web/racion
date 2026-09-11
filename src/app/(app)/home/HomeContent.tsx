@@ -8,6 +8,7 @@ import type { NormRanges } from "@/components/NormCard";
 import { DayPlan } from "@/components/DayPlan";
 import { WeekPlan } from "@/components/WeekPlan";
 import type { DisplayDay, DisplayWeek } from "@/lib/generator";
+import { DiaryHomeRow } from "./DiaryHomeRow";
 
 const OPTIONS = [
   { key: "today", label: "Сегодня" },
@@ -41,6 +42,10 @@ export function HomeContent({
 
   return (
     <>
+      {/* Опциональная строка дневника (US 39): остаток ккал + вход к подсказке.
+          Рендерится только при активной норме — иначе главный показывает своё
+          «заполни профиль». */}
+      <DiaryHomeRow />
       <SegmentedControl
         options={OPTIONS}
         value={segment}

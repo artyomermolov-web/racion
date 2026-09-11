@@ -120,10 +120,18 @@ export function SuggestionsBlock({
       {loading && !block ? (
         <div className="suggest-loading">Подбираем варианты…</div>
       ) : meals.length === 0 ? (
-        <div className="suggest-empty">
-          Под этот фильтр варианта не нашлось. Смените чипсы усилий или пересоберите
-          остаток дня.
-        </div>
+        block?.baseEmpty ? (
+          <div className="suggest-empty">
+            Пока нечего предложить: база рецептов пуста или всё отсеяно вашими
+            ограничениями. Наполните базу (npm run seed) или ослабьте ограничения
+            в профиле.
+          </div>
+        ) : (
+          <div className="suggest-empty">
+            Под этот фильтр усилий вариантов нет. Смените чипсы выше или
+            пересоберите остаток дня.
+          </div>
+        )
       ) : (
         <div className="suggest-cards">
           {meals.map((m) => (
