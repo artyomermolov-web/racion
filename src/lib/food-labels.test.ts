@@ -4,21 +4,22 @@
 import { describe, it, expect } from "vitest";
 import { GROUP_ICONS, GROUP_ICON_FALLBACK, groupIcon } from "./food-labels";
 
-// 13 групп сида (prisma/seed-data.ts, объект G) — источник истины для базы.
+// 13 групп сида — фактические значения Ingredient.group в БД (русские подписи из
+// объекта G в prisma/seed-data.ts, которыми seed.ts заполняет колонку group).
 const SEED_GROUPS = [
-  "cereal",
-  "dairy",
-  "meat",
-  "fish",
-  "veg",
-  "fruit",
-  "grocery",
-  "egg",
-  "nuts",
-  "bread",
-  "beverage",
-  "canned",
-  "frozen",
+  "Крупы и макароны",
+  "Молочные продукты",
+  "Мясо и птица",
+  "Рыба и морепродукты",
+  "Овощи",
+  "Фрукты и ягоды",
+  "Бакалея",
+  "Яйца",
+  "Орехи и семечки",
+  "Хлеб и выпечка",
+  "Напитки",
+  "Консервы",
+  "Замороженное",
 ] as const;
 
 describe("groupIcon", () => {
@@ -36,19 +37,19 @@ describe("groupIcon", () => {
   });
 
   it("совпадает с таблицей spec.md по каждой группе", () => {
-    expect(groupIcon("cereal")).toBe("🌾");
-    expect(groupIcon("dairy")).toBe("🥛");
-    expect(groupIcon("meat")).toBe("🍗");
-    expect(groupIcon("fish")).toBe("🐟");
-    expect(groupIcon("veg")).toBe("🥦");
-    expect(groupIcon("fruit")).toBe("🍎");
-    expect(groupIcon("grocery")).toBe("🫙");
-    expect(groupIcon("egg")).toBe("🥚");
-    expect(groupIcon("nuts")).toBe("🥜");
-    expect(groupIcon("bread")).toBe("🍞");
-    expect(groupIcon("beverage")).toBe("🥤");
-    expect(groupIcon("canned")).toBe("🥫");
-    expect(groupIcon("frozen")).toBe("🧊");
+    expect(groupIcon("Крупы и макароны")).toBe("🌾");
+    expect(groupIcon("Молочные продукты")).toBe("🥛");
+    expect(groupIcon("Мясо и птица")).toBe("🍗");
+    expect(groupIcon("Рыба и морепродукты")).toBe("🐟");
+    expect(groupIcon("Овощи")).toBe("🥦");
+    expect(groupIcon("Фрукты и ягоды")).toBe("🍎");
+    expect(groupIcon("Бакалея")).toBe("🫙");
+    expect(groupIcon("Яйца")).toBe("🥚");
+    expect(groupIcon("Орехи и семечки")).toBe("🥜");
+    expect(groupIcon("Хлеб и выпечка")).toBe("🍞");
+    expect(groupIcon("Напитки")).toBe("🥤");
+    expect(groupIcon("Консервы")).toBe("🥫");
+    expect(groupIcon("Замороженное")).toBe("🧊");
   });
 
   it("у разных групп разные значки (нет коллизий)", () => {
@@ -59,7 +60,8 @@ describe("groupIcon", () => {
   it("неизвестная группа → fallback", () => {
     expect(groupIcon("unknown")).toBe(GROUP_ICON_FALLBACK);
     expect(groupIcon("")).toBe(GROUP_ICON_FALLBACK);
-    expect(groupIcon("Cereal")).toBe(GROUP_ICON_FALLBACK); // регистр важен
+    expect(groupIcon("egg")).toBe(GROUP_ICON_FALLBACK); // ключ, а не подпись — fallback
+    expect(groupIcon("овощи")).toBe(GROUP_ICON_FALLBACK); // регистр важен
   });
 
   it("нет группы (рецепт / null / undefined) → fallback", () => {
