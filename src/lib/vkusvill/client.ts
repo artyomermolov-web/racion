@@ -12,6 +12,8 @@
 // Не помечен "server-only": адаптер вызывается и из server actions, и из CLI-синка
 // (node/tsx). В клиентские бандлы он не импортируется.
 
+import type { CartItem } from "@/core/vkusvill";
+
 const DEFAULT_ENDPOINT = "https://mcp001.vkusvill.ru/mcp";
 
 /** Ошибка из конверта ВВ (или транспортная). */
@@ -213,4 +215,39 @@ export async function productsSearchAll(
   }
   // Вышли по cap — has_more мог остаться true.
   return { products, pages, incomplete: true };
+}
+
+/**
+ * Ответ `vkusvill_cart_link_create` (конверт `data`). Точное имя поля со ссылкой на
+ * живом сервере не зафиксировано фикстурой (MCP держит жёсткий rate-limit, ADR-0001),
+ * поэтому терпим два варианта: `share_basket` — прямое имя параметра из CONTEXT.md
+ * «Ссылка-корзина», `url` — общий фолбэк. При первом успешном live-вызове форму
+ * подтвердить и сузить до одного ключа.
+ */
+export interface CartLinkData {
+  share_basket?: string;
+  url?: string;
+}
+
+/** Достаёт ссылку-корзину из ответа ВВ (см. допущение о форме в `CartLinkData`). */
+export function cartLinkUrl(data: CartLinkData): string | null {
+  return data.share_basket ?? data.url ?? null;
+}
+
+/**
+ * Live-вызов `vkusvill_cart_link_create` — генерит ссылку `?share_basket=` на
+ * предзаполненную корзину (тикет 04, ADR-0001). Это ССЫЛКА, не заказ и не оплата,
+ * авторизации не требует — под ограничения на финансовые действия не попадает.
+ * Одна ссылка держит ≤20 позиций (разбиение — `buildCartChunks` в core). При
+ * недоступности/лимите ВВ вернётся `{ok:false}` — UI деградирует мягко.
+ *
+ * Ключ аргумента `products` — допущение (spec.md фиксирует лишь форму позиции
+ * `{xml_id,q}`, не имя обёртки); подтвердить на первом live-вызове (сеть — вне
+ * юнит-тестов, spec.md Testing Decisions).
+ */
+export function createCartLink(
+  items: CartItem[],
+  opts?: VvClientOptions,
+): Promise<VvResult<CartLinkData>> {
+  return callTool<CartLinkData>("vkusvill_cart_link_create", { products: items }, opts);
 }

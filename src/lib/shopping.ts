@@ -60,6 +60,8 @@ export async function buildShoppingListForPlan(
         pricePerPack: i.pricePerPack,
         // Провенанс (тикет 03): только vkusvill даёт цену в смету; остальное — фолбэк.
         source: i.source as IngredientSource,
+        // SKU ВВ (тикет 04) — для ссылки-корзины; null у несопоставленных.
+        vvXmlId: i.vvXmlId,
       });
     }
   }

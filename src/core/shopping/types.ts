@@ -57,6 +57,11 @@ export interface ShoppingIngredient {
    * либо отсутствие поля — «сырой» продукт до ре-сорса) из стоимости исключается.
    */
   source?: IngredientSource;
+  /**
+   * SKU товара ВВ (тикет 04). Есть только у сопоставленных позиций; нужен для
+   * ссылки-корзины ВкусВилл (несопоставленные в корзину не идут).
+   */
+  vvXmlId?: string | null;
 }
 
 export interface ShoppingListInput {
@@ -97,6 +102,11 @@ export interface ShoppingLine {
   priced: boolean;
   /** Стоимость строки = priced ? packsToBuy · pricePerPack : 0, ₽. */
   lineCost: number;
+  /**
+   * SKU товара ВВ (тикет 04) для ссылки-корзины; null у несопоставленных позиций
+   * (в корзину ВВ они не попадают).
+   */
+  vvXmlId: string | null;
 }
 
 /** Собранный список покупок: строки (отсортированы) и итоговая сумма ₽. */

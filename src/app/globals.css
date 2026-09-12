@@ -1548,6 +1548,23 @@ select.input {
   margin-top: 4px;
 }
 
+/* ---------- корзина ВкусВилл (тикет 04) ---------- */
+.cart-links {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cart-links-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+.cart-links-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 /* ---------- кладовка (тикет 19) ---------- */
 .pantry-snapshot {
   padding: 16px;

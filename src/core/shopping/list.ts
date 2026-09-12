@@ -84,6 +84,7 @@ function toLine(
     leftover,
     priced,
     lineCost: priced ? packsToBuy * ing.pricePerPack : 0,
+    vvXmlId: ing.vvXmlId ?? null,
   };
 }
 

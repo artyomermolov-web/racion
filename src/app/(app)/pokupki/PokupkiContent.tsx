@@ -17,6 +17,7 @@ import type { PurchaseLineInput, PurchaseSnapshot } from "@/core/pantry";
 import { SegmentedControl } from "@/components/ios/SegmentedControl";
 import { syncShoppingListAction } from "@/app/actions/shopping";
 import { confirmPurchaseAction, type PantryRefresh } from "@/app/actions/pantry";
+import { createCartLinksAction, type CartLinksResult } from "@/app/actions/cart";
 import { useClientMap } from "./useClientMap";
 import { qty, unitLabel } from "./format";
 
@@ -62,11 +63,13 @@ export function PokupkiContent({ list, onList, onConfirmed, onGoToPantry }: Prop
   const mounted = overridesReady && purchasedReady;
   const [compact, setCompact] = useState(false);
   const [snapshot, setSnapshot] = useState<PurchaseSnapshot | null>(null);
+  const [cart, setCart] = useState<CartLinksResult | null>(null);
   const [pending, startTransition] = useTransition();
 
   /** Обновить из плана: ре-синк с текущей неделей (не-замороженные строки). */
   const sync = () => {
     setSnapshot(null);
+    setCart(null);
     startTransition(async () => {
       const fresh = await syncShoppingListAction();
       if (fresh) onList(fresh);
@@ -134,6 +137,7 @@ export function PokupkiContent({ list, onList, onConfirmed, onGoToPantry }: Prop
       persistOverrides({});
       persistPurchased({});
       setSnapshot(snapshot);
+      setCart(null);
       onConfirmed(refresh);
     });
   };
@@ -150,6 +154,17 @@ export function PokupkiContent({ list, onList, onConfirmed, onGoToPantry }: Prop
   }, [lines]);
 
   const hasBuyable = lines.some((l) => l.effectivePacks > 0);
+  // В корзину ВВ идут только сопоставленные позиции (есть vvXmlId) с пачками к покупке.
+  const hasCartItems = lines.some((l) => l.vvXmlId && l.effectivePacks > 0);
+
+  /** Собрать ссылку(и) на корзину ВкусВилл из покупаемых сопоставленных позиций. */
+  const openCart = () => {
+    const cartLines = lines.map((l) => ({ vvXmlId: l.vvXmlId, quantity: l.effectivePacks }));
+    startTransition(async () => {
+      const result = await createCartLinksAction(cartLines);
+      setCart(result);
+    });
+  };
 
   return (
     <div className={`shop${compact ? " is-compact" : ""}${pending ? " is-busy" : ""}`}>
@@ -307,10 +322,60 @@ export function PokupkiContent({ list, onList, onConfirmed, onGoToPantry }: Prop
         >
           {pending ? "Обновляем…" : "Обновить из плана"}
         </button>
+        {hasCartItems ? (
+          <button type="button" className="btn tinted" onClick={openCart} disabled={pending}>
+            {pending ? "Собираем корзину…" : "Открыть корзину во ВкусВилл"}
+          </button>
+        ) : null}
         <button type="button" className="btn" onClick={confirm} disabled={pending || !hasBuyable}>
           Подтвердить покупку
         </button>
       </div>
+
+      {/* Ссылка(и) на предзаполненную корзину ВВ. Это ссылка, не заказ/оплата. */}
+      {cart ? (
+        <div className="group cart-links no-print">
+          {cart.empty ? (
+            <div className="shop-hint">
+              В корзину ВкусВилл пока нечего добавить: ни одна покупаемая позиция не
+              сопоставлена с товаром ВкусВилл.
+            </div>
+          ) : cart.links.length === 0 ? (
+            <div className="shop-hint">{cart.error ?? "Не удалось собрать корзину."}</div>
+          ) : (
+            <>
+              <div className="cart-links-title">
+                {cart.links.length === 1
+                  ? "Корзина ВкусВилл готова"
+                  : `Корзина не влезла в одну ссылку — собрали ${cart.links.length} корзин`}
+              </div>
+              {cart.links.length > 1 ? (
+                <div className="shop-hint">
+                  Одна ссылка ВкусВилл держит до 20 позиций, поэтому список разбит на
+                  части. Открывайте по очереди — каждая добавит свою порцию продуктов.
+                </div>
+              ) : null}
+              <div className="cart-links-list">
+                {cart.links.map((url, i) => (
+                  <a
+                    key={url}
+                    className="btn"
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {cart.links.length === 1 ? "Открыть корзину" : `Открыть корзину ${i + 1}`}
+                  </a>
+                ))}
+              </div>
+              {cart.error ? <div className="shop-hint">{cart.error}</div> : null}
+              <div className="shop-hint">
+                Это ссылка на корзину, а не заказ и не оплата — авторизация не нужна.
+              </div>
+            </>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
