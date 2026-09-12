@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "seed": "tsx prisma/seed.ts",
+    "vv:sync": "tsx scripts/vv-sync.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

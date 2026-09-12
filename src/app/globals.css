@@ -1253,6 +1253,40 @@ select.input {
   font-weight: 590;
   vertical-align: middle;
 }
+/* Провенанс «данные ВкусВилл» (тикет 01): фирменная зелёная плашка на карточке
+   продукта, чтобы настоящие КБЖУ/цена отличались от seed-фолбэка. */
+.badge-vv {
+  background: rgba(45, 165, 90, 0.16);
+  color: #1f8a4c;
+}
+:root[data-theme="dark"] .badge-vv,
+:root:not([data-theme="light"]) .badge-vv {
+  color: #4cd07d;
+}
+/* Бейдж скидки «−N%» (акция ВВ). */
+.badge-sale {
+  background: rgba(255, 59, 48, 0.14);
+  color: var(--danger);
+}
+/* Строка цены ВкусВилл в карточке продукта. */
+.food-price {
+  margin-top: 5px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.food-price-cur {
+  color: var(--label);
+}
+.food-price-per {
+  color: var(--label2);
+  font-weight: 400;
+}
+.food-price-old {
+  margin-left: 8px;
+  color: var(--label2);
+  font-weight: 400;
+  text-decoration: line-through;
+}
 
 /* Кнопка-ссылка (удалить и т.п.) без фона. */
 .linklike {

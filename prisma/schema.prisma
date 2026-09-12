@@ -125,6 +125,19 @@ model Ingredient {
   isCustom      Boolean @default(false)
   ownerUserId   String?
 
+  // --- Провенанс и данные ВкусВилл (тикет 01, ADR-0001) ---
+  // Откуда взяты КБЖУ/цена: "seed" (фолбэк-ориентир) | "vkusvill" (настоящие).
+  source        String  @default("seed")
+  // SKU товара ВВ (xml_id строкой). Ключ идемпотентного upsert синка (уникален;
+  // у seed-продуктов null — в SQLite несколько NULL в unique допустимы).
+  vvXmlId       String? @unique
+  // Старая цена и % скидки — только для бейджа «Акция»; смета считается по
+  // pricePerPack (= price.current). Цена по карте лояльности сюда не кладётся.
+  vvPriceOld    Float?
+  vvDiscountPct Float?
+  // Когда синк последний раз обновил данные ВВ (null у seed-продуктов).
+  vvUpdatedAt   DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
