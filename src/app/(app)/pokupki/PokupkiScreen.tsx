@@ -14,7 +14,7 @@ import { EmptyState } from "@/components/ios/EmptyState";
 import { PokupkiContent } from "./PokupkiContent";
 import { PantryContent } from "./PantryContent";
 
-const EMPTY_LIST: ShoppingList = { lines: [], totalCost: 0 };
+const EMPTY_LIST: ShoppingList = { lines: [], totalCost: 0, partial: false, excludedCount: 0 };
 
 interface Props {
   initialList: ShoppingList | null;

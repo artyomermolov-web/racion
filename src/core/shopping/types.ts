@@ -10,6 +10,13 @@
 /** Единица продажи/учёта продукта. */
 export type Unit = "g" | "ml" | "pcs";
 
+/**
+ * Провенанс ингредиента (тикет 01, ADR-0001): откуда взяты цена и КБЖУ.
+ * `vkusvill` — сопоставлен с товаром ВВ, цена реальна и идёт в смету; `seed` —
+ * фолбэк-ориентир, в стоимость НЕ попадает (частичная смета, тикет 03).
+ */
+export type IngredientSource = "seed" | "vkusvill";
+
 /** Ингредиент в составе рецепта: количество на ВСЁ блюдо, в единице продажи. */
 export interface ShoppingRecipeIngredient {
   ingredientId: string;
@@ -43,8 +50,13 @@ export interface ShoppingIngredient {
   unit: Unit;
   /** Размер магазинной упаковки (в единице продажи). */
   packSize: number;
-  /** Цена-ориентир за пачку, ₽ (ненадёжна, тикет 01). */
+  /** Цена за пачку, ₽. Реальна только при `source="vkusvill"`; иначе фолбэк. */
   pricePerPack: number;
+  /**
+   * Провенанс (тикет 03). Только `vkusvill` даёт цену в смету; всё прочее (`seed`
+   * либо отсутствие поля — «сырой» продукт до ре-сорса) из стоимости исключается.
+   */
+  source?: IngredientSource;
 }
 
 export interface ShoppingListInput {
@@ -78,13 +90,25 @@ export interface ShoppingLine {
   packsToBuy: number;
   /** Остаток позиции = packsToBuy·packSize − netNeed (≥0). */
   leftover: number;
-  /** Стоимость строки = packsToBuy · pricePerPack, ₽. */
+  /**
+   * Цена по позиции реальна (source=vkusvill) и учтена в смете. Для несопоставленных
+   * (`priced=false`) `lineCost` всегда 0 — цена-фолбэк в смету не подставляется.
+   */
+  priced: boolean;
+  /** Стоимость строки = priced ? packsToBuy · pricePerPack : 0, ₽. */
   lineCost: number;
 }
 
 /** Собранный список покупок: строки (отсортированы) и итоговая сумма ₽. */
 export interface ShoppingList {
   lines: ShoppingLine[];
-  /** Итого ₽ = Σ lineCost. */
+  /** Итого ₽ = Σ lineCost (только сопоставленные с ВВ позиции). */
   totalCost: number;
+  /**
+   * Смета частичная (тикет 03): есть покупаемые позиции без реальной цены ВВ,
+   * поэтому итог занижен и приблизителен. false — все покупаемые позиции с ценой.
+   */
+  partial: boolean;
+  /** Сколько покупаемых позиций (packsToBuy>0) исключено из стоимости. */
+  excludedCount: number;
 }

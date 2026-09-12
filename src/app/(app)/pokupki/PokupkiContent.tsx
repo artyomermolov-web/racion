@@ -88,25 +88,30 @@ export function PokupkiContent({ list, onList, onConfirmed, onGoToPantry }: Prop
   };
 
   // Эффективные строки (с учётом ручных правок) и итоги.
-  const { lines, total, remaining, boughtCount, editsCount } = useMemo(() => {
+  const { lines, total, remaining, boughtCount, editsCount, approxCount } = useMemo(() => {
     const eff: EffectiveLine[] = list.lines.map((l) => {
       const override = overrides[l.ingredientId];
       const frozen = override !== undefined;
       const effectivePacks = frozen ? override : l.packsToBuy;
       const effLeftover = Math.max(0, effectivePacks * l.packSize - l.netNeed);
-      const effCost = effectivePacks * l.pricePerPack;
+      // Несопоставленные с ВВ (l.priced=false) в смету не идут — цена приблизительна.
+      const effCost = l.priced ? effectivePacks * l.pricePerPack : 0;
       return { ...l, effectivePacks, frozen, effLeftover, effCost };
     });
     let total = 0;
     let remaining = 0;
     let boughtCount = 0;
+    // Дыры в смете: то же правило, что excludedCount в ядре (list.ts), но по
+    // ЭФФЕКТИВНЫМ пачкам — с учётом ручных правок числа пачек на клиенте.
+    let approxCount = 0;
     for (const l of eff) {
       total += l.effCost;
       if (purchased[l.ingredientId]) boughtCount += 1;
       else remaining += l.effCost;
+      if (!l.priced && l.effectivePacks > 0) approxCount += 1;
     }
     const editsCount = eff.filter((l) => l.frozen).length;
-    return { lines: eff, total, remaining, boughtCount, editsCount };
+    return { lines: eff, total, remaining, boughtCount, editsCount, approxCount };
   }, [list, overrides, purchased]);
 
   /** Подтвердить покупку: переносим купленное в кладовку, показываем снапшот. */
@@ -118,7 +123,9 @@ export function PokupkiContent({ list, onList, onConfirmed, onGoToPantry }: Prop
         name: l.name,
         packsBought: l.effectivePacks,
         packSize: l.packSize,
-        pricePerPack: l.pricePerPack,
+        // Несопоставленные с ВВ (тикет 03): продукт уезжает в кладовку, но цены нет —
+        // в снапшот кладём 0, чтобы зафиксированная сумма не выдумывала стоимость.
+        pricePerPack: l.priced ? l.pricePerPack : 0,
       }));
     if (payload.length === 0) return;
     startTransition(async () => {
@@ -164,7 +171,10 @@ export function PokupkiContent({ list, onList, onConfirmed, onGoToPantry }: Prop
       {/* Сводка: итог ₽ и остаток к покупке + режим просмотра. */}
       <div className="group shop-summary">
         <div className="shop-total">
-          <div className="shop-total-rub num">{rub(total)} ₽</div>
+          <div className="shop-total-rub num">
+            {approxCount > 0 ? "≈ " : ""}
+            {rub(total)} ₽
+          </div>
           <div className="shop-total-of num">
             {lines.length} поз.
             {boughtCount > 0 ? ` · куплено ${boughtCount}` : ""}
@@ -172,6 +182,14 @@ export function PokupkiContent({ list, onList, onConfirmed, onGoToPantry }: Prop
         </div>
         {mounted && remaining !== total ? (
           <div className="shop-remaining num">Осталось купить: {rub(remaining)} ₽</div>
+        ) : null}
+        {approxCount > 0 ? (
+          <div className="shop-approx">
+            <span className="shop-approx-badge">приблизительно</span>
+            <span>
+              {approxCount} поз. без цены ВкусВилл — не учтены в сумме. Итог занижен.
+            </span>
+          </div>
         ) : null}
         <div className="shop-hint">
           Список собран из плана недели целыми пачками за вычетом кладовки. Правка
@@ -231,7 +249,16 @@ export function PokupkiContent({ list, onList, onConfirmed, onGoToPantry }: Prop
                     </div>
                   </div>
                   <div className="shop-side">
-                    <div className="shop-cost num">{rub(l.effCost)} ₽</div>
+                    {l.priced ? (
+                      <div className="shop-cost num">{rub(l.effCost)} ₽</div>
+                    ) : (
+                      <div
+                        className="shop-cost shop-cost-noprice"
+                        title="Нет мэтча с ВкусВилл — цена неизвестна, в сумму не входит"
+                      >
+                        цена ?
+                      </div>
+                    )}
                     <div className="shop-stepper no-print">
                       <button
                         type="button"

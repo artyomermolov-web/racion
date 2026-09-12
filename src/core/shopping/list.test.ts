@@ -10,7 +10,11 @@ import type { ShoppingListInput, ShoppingRecipe, ShoppingIngredient } from "./ty
 // ингредиента приходят уже в единице ПРОДАЖИ (г/мл/шт): перевод «граммовый
 // эквивалент → штуки» для штучных делает слой данных.
 
-/** Ингредиент-пачка для тестов (packSize/цена — что проверяем при округлении). */
+/**
+ * Ингредиент-пачка для тестов (packSize/цена — что проверяем при округлении).
+ * По умолчанию `source: "vkusvill"` — сопоставлен с товаром ВВ, значит цена
+ * реальна и попадает в смету (тикет 03). Провенанс переопределяется через `extra`.
+ */
 const ing = (
   id: string,
   packSize: number,
@@ -23,6 +27,7 @@ const ing = (
   unit: "g",
   packSize,
   pricePerPack,
+  source: "vkusvill",
   ...extra,
 });
 
@@ -317,5 +322,122 @@ describe("buildShoppingList — сумма ₽, порядок и устойчи
     expect(line.unit).toBe("pcs");
     expect(line.packsToBuy).toBe(1);
     expect(line.leftover).toBe(4);
+  });
+});
+
+// Частичная смета (тикет 03, spec Q9=c, CONTEXT «Частичная смета»). Только
+// сопоставленные с товаром ВВ позиции (`source="vkusvill"`) имеют реальную цену и
+// попадают в стоимость; несопоставленные (`source="seed"`/фолбэк) остаются в
+// списке (и в КБЖУ/меню), но исключаются из `lineCost`/`totalCost`, а вся смета
+// помечается `partial` со счётчиком исключённых позиций.
+describe("buildShoppingList — частичная смета (провенанс ВкусВилл)", () => {
+  it("все позиции из ВВ → полная смета: partial=false, ничего не исключено", () => {
+    const recipes = [
+      oneIngredientRecipe("r1", "a", 900, 1),
+      oneIngredientRecipe("r2", "b", 300, 1),
+    ];
+    const list = buildShoppingList({
+      plan: [
+        { recipeId: "r1", portion: 1 },
+        { recipeId: "r2", portion: 1 },
+      ],
+      recipes,
+      ingredients: [ing("a", 900, 90), ing("b", 400, 60)],
+    });
+    expect(list.partial).toBe(false);
+    expect(list.excludedCount).toBe(0);
+    expect(list.totalCost).toBe(150);
+    expect(list.lines.every((l) => l.priced)).toBe(true);
+  });
+
+  it("позиция source=seed остаётся в списке, но вне стоимости; partial=true", () => {
+    const recipes = [
+      oneIngredientRecipe("r1", "vv", 900, 1),
+      oneIngredientRecipe("r2", "seed", 300, 1),
+    ];
+    const list = buildShoppingList({
+      plan: [
+        { recipeId: "r1", portion: 1 },
+        { recipeId: "r2", portion: 1 },
+      ],
+      recipes,
+      ingredients: [
+        ing("vv", 900, 90),
+        ing("seed", 400, 60, { source: "seed" }),
+      ],
+    });
+    // Обе позиции в списке (КБЖУ/меню не страдают).
+    expect(list.lines).toHaveLength(2);
+    const seed = list.lines.find((l) => l.ingredientId === "seed")!;
+    const vv = list.lines.find((l) => l.ingredientId === "vv")!;
+    expect(seed.priced).toBe(false);
+    expect(seed.lineCost).toBe(0); // цена-фолбэк не подставляется в смету
+    expect(vv.priced).toBe(true);
+    expect(vv.lineCost).toBe(90);
+    // Итог — только по сопоставленным; помечен как приблизительный.
+    expect(list.totalCost).toBe(90);
+    expect(list.partial).toBe(true);
+    expect(list.excludedCount).toBe(1);
+  });
+
+  it("несколько исключённых считаются счётчиком", () => {
+    const recipes = [
+      oneIngredientRecipe("r1", "s1", 100, 1),
+      oneIngredientRecipe("r2", "s2", 100, 1),
+      oneIngredientRecipe("r3", "vv", 100, 1),
+    ];
+    const list = buildShoppingList({
+      plan: [
+        { recipeId: "r1", portion: 1 },
+        { recipeId: "r2", portion: 1 },
+        { recipeId: "r3", portion: 1 },
+      ],
+      recipes,
+      ingredients: [
+        ing("s1", 900, 90, { source: "seed" }),
+        ing("s2", 900, 90, { source: "seed" }),
+        ing("vv", 900, 90),
+      ],
+    });
+    expect(list.excludedCount).toBe(2);
+    expect(list.partial).toBe(true);
+    expect(list.totalCost).toBe(90); // только vv
+  });
+
+  it("undefined source трактуется как не-ВВ (исключается из сметы)", () => {
+    const recipes = [oneIngredientRecipe("r1", "prod", 100, 1)];
+    const line = lineFor(
+      {
+        plan: [{ recipeId: "r1", portion: 1 }],
+        recipes,
+        // явно без source — как «сырой» продукт до ре-сорса
+        ingredients: [{ id: "prod", name: "prod", group: "Тест", unit: "g", packSize: 900, pricePerPack: 90 }],
+      },
+      "prod",
+    );
+    expect(line.priced).toBe(false);
+    expect(line.lineCost).toBe(0);
+  });
+
+  it("seed-позиция, полностью покрытая кладовкой (0 пачек), не считается дырой", () => {
+    // Ничего не покупаем по seed-позиции → смета по ней и так пуста, не «дыра».
+    const recipes = [oneIngredientRecipe("r1", "seed", 500, 1)];
+    const list = buildShoppingList({
+      plan: [{ recipeId: "r1", portion: 1 }],
+      recipes,
+      ingredients: [ing("seed", 900, 90, { source: "seed" })],
+      onHand: { seed: 900 },
+    });
+    const line = list.lines[0];
+    expect(line.packsToBuy).toBe(0);
+    expect(line.priced).toBe(false);
+    expect(list.excludedCount).toBe(0);
+    expect(list.partial).toBe(false);
+  });
+
+  it("пустой план: смета не частичная", () => {
+    const list = buildShoppingList({ plan: [], recipes: [], ingredients: [] });
+    expect(list.partial).toBe(false);
+    expect(list.excludedCount).toBe(0);
   });
 });

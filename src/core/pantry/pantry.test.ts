@@ -72,6 +72,25 @@ describe("confirmPurchase — снапшот, real-лоты, промоушен 
     expect(snapshot.totalCost).toBe(90 + 2 * 80); // 250
   });
 
+  it("несопоставленная позиция (цена 0, тикет 03): в снапшоте не оценена, но лот в кладовке есть", () => {
+    // Частичная смета: у продукта без мэтча с ВВ UI кладёт pricePerPack:0, чтобы
+    // зафиксированная сумма не выдумывала стоимость. Продукт при этом реально
+    // куплен — уезжает в кладовку real-лотом.
+    const withUnpriced = {
+      ...base,
+      lines: [
+        { ingredientId: "egg", name: "Яйцо", packsBought: 1, packSize: 10, pricePerPack: 90 },
+        { ingredientId: "spag", name: "Спагетти", packsBought: 1, packSize: 450, pricePerPack: 0 },
+      ],
+    };
+    const { snapshot, newRealLots } = confirmPurchase(withUnpriced);
+    const spag = snapshot.lines.find((l) => l.ingredientId === "spag")!;
+    expect(spag.lineCost).toBe(0); // цена не выдумана
+    expect(snapshot.totalCost).toBe(90); // итог — только по оценённому
+    // Но купленный продукт всё равно в кладовке (лот создан).
+    expect(newRealLots.find((l) => l.ingredientId === "spag")?.qty).toBe(450);
+  });
+
   it("real-лоты: qty = пачки·размер, срок годности = дата + shelfLifeDays", () => {
     const { newRealLots } = confirmPurchase(base);
     expect(newRealLots).toHaveLength(2);
@@ -113,7 +132,7 @@ describe("confirmPurchase — снапшот, real-лоты, промоушен 
       plan: [{ recipeId: "r", portion: 1 }],
       recipes: [{ id: "r", servings: 1, ingredients: [{ ingredientId: "egg", quantity: 10 }] }],
       ingredients: [
-        { id: "egg", name: "Яйцо", group: "Яйца", unit: "pcs", packSize: 10, pricePerPack: 200 },
+        { id: "egg", name: "Яйцо", group: "Яйца", unit: "pcs", packSize: 10, pricePerPack: 200, source: "vkusvill" },
       ],
     });
     expect(liveAfterPriceHike.totalCost).toBe(200); // живой список — по новой цене
