@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { LargeTitleHeader } from "@/components/ios/LargeTitleHeader";
@@ -9,7 +10,11 @@ import { DiaryScreen } from "./DiaryScreen";
 // requireUser — на уровне (app)/layout.tsx; здесь дополнительно грузим базу еды
 // (продукты + рецепты) для сегмента «Поиск» и для показа названий записей —
 // снапшоты записей хранят только refId (тикет 08), имя резолвится из базы.
-// День и его данные держит клиент (локальная дата без UTC-дрейфа).
+// День и его данные держит клиент (локальная дата без UTC-дрейфа). Необязательный
+// ?date=YYYY-MM-DD открывает Дневник сразу на этом дне — так экран «Неделя» ведёт
+// тапом по дню недели в ленту этого дня (тикет 13). Параметр читается на клиенте
+// (useSearchParams в DiaryScreen), чтобы клиентская навигация <Link> подхватывала
+// свежую дату, а не залипший в Router Cache сегмент /dnevnik без параметра.
 export default async function DiaryPage() {
   const user = await requireUser();
   const [ingredients, recipes] = await Promise.all([
@@ -52,7 +57,10 @@ export default async function DiaryPage() {
           </div>
         }
       />
-      <DiaryScreen ingredients={ingredients} recipes={recipes} />
+      {/* Suspense — обязателен для useSearchParams в клиентском DiaryScreen. */}
+      <Suspense fallback={<main className="diary" aria-busy="true" />}>
+        <DiaryScreen ingredients={ingredients} recipes={recipes} />
+      </Suspense>
     </>
   );
 }

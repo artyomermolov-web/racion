@@ -1041,6 +1041,24 @@ select.input {
   cursor: default;
 }
 
+/* Переход неделя → день: ссылка «Открыть … в Дневнике» под сводкой дня (тикет 13).
+   Отделена сепаратором от сводки; выглядит как строка-действие списка iOS. */
+.week-open-day {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 0.5px solid var(--sep);
+  color: var(--tint);
+  font-size: 15px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.week-open-day:active {
+  opacity: 0.5;
+}
+
 .week-note {
   padding: 6px 4px 0;
   font-size: 12px;
@@ -1810,6 +1828,13 @@ select.input {
 .icon-btn:disabled {
   opacity: 0.35;
   cursor: default;
+}
+/* Иконка-действие в процессе (aria-busy) — вращаем глиф, как «съел» в ленте дня
+   (eat-spin ниже). Возвращает пер-кнопочную обратную связь после ухода от текста
+   «…» на экране недели (тикет 13). */
+.icon-btn[aria-busy="true"] svg {
+  animation: eat-spin 0.8s linear infinite;
+  transform-origin: center;
 }
 
 /* Позиция-карточка (предложено/съедено): тело-toggle (раскрытие рецепта) слева,

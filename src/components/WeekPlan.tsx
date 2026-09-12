@@ -6,11 +6,14 @@
 // состоянии клиента; действия сервера возвращают свежий результат под норму.
 // Изменение настроек план не трогает — перегенерация только по кнопке.
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
+import Link from "next/link";
 import type { Slot } from "@/core/generator";
 import type { DisplayWeek, MealRef } from "@/lib/generator";
 import { MacroRings } from "@/components/MacroRings";
+import { ReplaceIcon } from "@/components/ios/ActionIcon";
 import { SLOT_LABELS, formatTime, label } from "@/lib/food-labels";
+import { weekDateKeys } from "@/lib/local-date";
 import {
   regenerateWeekAction,
   regenerateWeekDayAction,
@@ -70,6 +73,10 @@ export function WeekPlan({ initial }: { initial: DisplayWeek }) {
   const [week, setWeek] = useState<DisplayWeek>(initial);
   const [selected, setSelected] = useState(0);
   const [pending, startTransition] = useTransition();
+  // Реальные даты дней недели (Пн..Вс) — считаем на клиенте после монтирования
+  // (SSR не знает таймзону). Нужны для перехода день недели → лента этого дня.
+  const [weekKeys, setWeekKeys] = useState<string[] | null>(null);
+  useEffect(() => setWeekKeys(weekDateKeys(new Date())), []);
   // Что именно перегенерируется сейчас: 'week' | 'day' | слот замены.
   const [busy, setBusy] = useState<"week" | "day" | Slot | null>(null);
 
@@ -173,6 +180,17 @@ export function WeekPlan({ initial }: { initial: DisplayWeek }) {
             {day.totals.fiber >= dayTarget.fiber ? <span className="fiber-ok"> ✓</span> : null}
           </span>
         </div>
+        {/* Переход неделя → день: тап ведёт в ленту этого дня Дневника (тикет 13).
+            Реальную дату дня недели знает только клиент (weekKeys) — до монтирования
+            ссылки нет. Переключение дней остаётся на табах выше. */}
+        {weekKeys ? (
+          <Link
+            href={`/dnevnik?date=${weekKeys[selected]}`}
+            className="week-open-day"
+          >
+            Открыть {DAY_LABELS[selected] ?? "день"} в Дневнике ›
+          </Link>
+        ) : null}
       </div>
       <div className="week-note">
         Отдельные дни могут отклоняться от цели — генератор держит в диапазонах
@@ -198,14 +216,17 @@ export function WeekPlan({ initial }: { initial: DisplayWeek }) {
                 {formatTime(m.timeMin)}
               </div>
             </div>
+            {/* Иконка-действие «заменить» — тот же набор, что в ленте дня (тикет 11),
+                для консистентности. Круговые стрелки; тап-таргет и имя даёт .icon-btn. */}
             <button
               type="button"
-              className="meal-replace"
+              className="icon-btn"
               onClick={() => replace(m.slot)}
               disabled={pending}
+              aria-busy={busy === m.slot}
               aria-label={`Заменить блюдо: ${label(SLOT_LABELS, m.slot)}`}
             >
-              {busy === m.slot ? "…" : "Заменить"}
+              <ReplaceIcon />
             </button>
           </div>
         ))}

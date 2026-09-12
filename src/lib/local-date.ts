@@ -17,3 +17,19 @@ export function toKey(d: Date): string {
 export function todayKey(): string {
   return toKey(new Date());
 }
+
+/**
+ * Ключи семи дней недели (Пн..Вс), содержащей дату `from` — локальная календарная
+ * неделя пользователя. Экран «Неделя» показывает дни по индексу (Пн=0..Вс=6), а
+ * тап ведёт в ленту этого дня Дневника, значит индексу нужна реальная дата (тикет
+ * 13). Понедельник — первый день (как подписи DAY_LABELS). Арифметика по локальным
+ * полям (DST-безопасно), без UTC-дрейфа — то же правило, что у toKey.
+ */
+export function weekDateKeys(from: Date): string[] {
+  // getDay(): 0=Вс..6=Сб. Сдвиг до понедельника: Пн→0, Вт→1, …, Вс→6.
+  const sinceMonday = (from.getDay() + 6) % 7;
+  const monday = new Date(from.getFullYear(), from.getMonth(), from.getDate() - sinceMonday);
+  return Array.from({ length: 7 }, (_, i) =>
+    toKey(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i)),
+  );
+}
