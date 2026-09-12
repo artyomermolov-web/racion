@@ -158,8 +158,9 @@ export interface ProductsSearchData {
 }
 
 /**
- * Поиск товаров ВВ (`vkusvill_products_search`) — единственный метод, нужный этому
- * слайсу. mode=full отдаёт КБЖУ/цену/категорию. Пагинация фиксирована 10/стр.
+ * Поиск товаров ВВ (`vkusvill_products_search`). mode=full отдаёт КБЖУ/цену/
+ * категорию. Пагинация фиксирована 10/стр. — за пределы страницы 1 ходит
+ * `productsSearchAll`.
  */
 export function productsSearch(
   q: string,
@@ -171,4 +172,45 @@ export function productsSearch(
     { q, page: params.page ?? 1, mode: params.mode ?? "full", sort: params.sort ?? "popularity" },
     opts,
   );
+}
+
+/** Итог постраничного сбора: собранные товары + честный признак неполноты. */
+export interface ProductsSearchAllResult {
+  /** Собранные товары со всех пройденных страниц (сырые, форму валидирует core). */
+  products: unknown[];
+  /** Сколько страниц реально получено. */
+  pages: number;
+  /**
+   * true — обход прерван раньше `has_more=false` (лимит/ошибка/достигнут cap), и
+   * набор, вероятно, неполон. Синк деградирует мягко (устойчивость, spec.md).
+   */
+  incomplete: boolean;
+  /** Последняя ошибка, если обход прервался ею. */
+  error?: VvError;
+}
+
+/**
+ * Собирает все страницы выдачи `vkusvill_products_search` по одному запросу,
+ * итерируя `page` пока `meta.has_more` (пагинация ВВ фиксирована 10/стр.). Обход
+ * ограничен `maxPages` — курируемый охват не требует глубокой пагинации и бережёт
+ * rate-limit; бэкофф на 429 живёт в `callTool`. Ошибка на любой странице
+ * останавливает обход мягко: возвращаем уже собранное с `incomplete=true`.
+ */
+export async function productsSearchAll(
+  q: string,
+  params: { mode?: "full" | "short"; sort?: string; maxPages?: number } = {},
+  opts?: VvClientOptions,
+): Promise<ProductsSearchAllResult> {
+  const maxPages = params.maxPages ?? 5;
+  const products: unknown[] = [];
+  let pages = 0;
+  for (let page = 1; page <= maxPages; page++) {
+    const res = await productsSearch(q, { page, mode: params.mode, sort: params.sort }, opts);
+    if (!res.ok) return { products, pages, incomplete: true, error: res.error };
+    pages++;
+    products.push(...(res.data.products ?? []));
+    if (!res.data.meta?.has_more) return { products, pages, incomplete: false };
+  }
+  // Вышли по cap — has_more мог остаться true.
+  return { products, pages, incomplete: true };
 }
