@@ -11,9 +11,14 @@
 import type { FoodNutrients } from "@/core/nutrition";
 import type { ParsedNutrition } from "./types";
 
-/** &nbsp; → пробел, <br> → перевод строки (разделитель поставщиков), прочие теги
- *  вырезаются, базовые HTML-сущности раскрываются. */
-function normalize(raw: string): string {
+/**
+ * Чистит разметку ВВ: &nbsp; → пробел, <br> → перевод строки (разделитель
+ * поставщиков/шагов), прочие теги вырезаются, базовые HTML-сущности раскрываются.
+ * Переиспользуется импортом рецептов (шаги приходят в том же грязном формате).
+ * Пустое/невалидное на входе → "" (защита от undefined у неполных ответов ВВ).
+ */
+export function stripVvMarkup(raw: string | null | undefined): string {
+  if (!raw) return "";
   return raw
     .replace(/&nbsp;|&#160;/gi, " ")
     .replace(/<br\s*\/?>/gi, "\n")
@@ -95,7 +100,7 @@ export function parseVkusvillNutrition(
   raw: string | null | undefined,
 ): ParsedNutrition | null {
   if (!raw || !raw.trim()) return null;
-  const variants = normalize(raw)
+  const variants = stripVvMarkup(raw)
     .split("\n")
     .map((s) => s.trim())
     .filter((s) => s.length > 0)

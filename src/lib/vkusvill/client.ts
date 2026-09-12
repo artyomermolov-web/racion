@@ -217,6 +217,38 @@ export async function productsSearchAll(
   return { products, pages, incomplete: true };
 }
 
+/** Ответ `vkusvill_recipes` (нужные импорту поля; форму рецепта валидирует core). */
+export interface RecipesData {
+  recipes?: unknown[];
+  meta?: { has_more?: boolean; page?: number };
+}
+
+/**
+ * Список рецептов ВВ (`vkusvill_recipes`) — у них чистые структурные КБЖУ и
+ * привязка ингредиентов к товарам (ADR-0001). Пагинация фиксирована 10/стр.;
+ * охват импорта курируемый (ограниченный стартовый набор), поэтому берём только
+ * первые `maxPages` страниц — бережём rate-limit. Сырые рецепты валидирует
+ * `recipeToRecipe` в core (форма — вне юнит-тестов сети, spec.md).
+ */
+export async function recipesList(
+  params: { page?: number; maxPages?: number; q?: string } = {},
+  opts?: VvClientOptions,
+): Promise<{ recipes: unknown[]; pages: number; incomplete: boolean; error?: VvError }> {
+  const maxPages = params.maxPages ?? 3;
+  const recipes: unknown[] = [];
+  let pages = 0;
+  for (let page = 1; page <= maxPages; page++) {
+    const args: Record<string, unknown> = { page };
+    if (params.q) args.q = params.q;
+    const res = await callTool<RecipesData>("vkusvill_recipes", args, opts);
+    if (!res.ok) return { recipes, pages, incomplete: true, error: res.error };
+    pages++;
+    recipes.push(...(res.data.recipes ?? []));
+    if (!res.data.meta?.has_more) return { recipes, pages, incomplete: false };
+  }
+  return { recipes, pages, incomplete: true };
+}
+
 /**
  * Ответ `vkusvill_cart_link_create` (конверт `data`). Точное имя поля со ссылкой на
  * живом сервере не зафиксировано фикстурой (MCP держит жёсткий rate-limit, ADR-0001),

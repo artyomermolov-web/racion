@@ -10,7 +10,7 @@
 // синка (`npm run vv:sync -- --offline`), и покрытием маппера. Живой снапшот —
 // когда лимит отпустит: `npm run vv:sync`.
 
-import type { VvProduct } from "./types";
+import type { VvProduct, VvRecipe } from "./types";
 
 export const SAMPLE_PRODUCTS: VvProduct[] = [
   {
@@ -94,6 +94,48 @@ export const SAMPLE_PRODUCTS: VvProduct[] = [
     category: { id: 3, name: "Овощи и зелень" },
     properties: [
       { name: "Пищевая ценность в 100 г", value: "Белки 0,8 г, жиры 0,1 г, углеводы 2,8 г, 15 ккал" },
+    ],
+  },
+];
+
+// Фикстуры рецептов ВкусВилл (тикет 05, spec.md шов 1, Q6=a). Форма — реальный
+// ответ `vkusvill_recipes`: id/name/steps/servings/ingredients (ссылки на товары
+// ВВ по их `id`) + структурные КБЖУ (у рецептов ВВ они чистые, ADR-0001).
+// Ингредиенты ссылаются на товары из SAMPLE_PRODUCTS выше — так импортируемый
+// рецепт «тянет» нужные товары в охват синка (в оффлайн-демо они уже там).
+export const SAMPLE_RECIPES: VvRecipe[] = [
+  // Все ингредиенты есть в охвате → 3/3 = 100%, импортируется.
+  {
+    id: 9001,
+    name: "Гречка с куриной грудкой и огурцом",
+    category: "Основные блюда",
+    servings: 2,
+    timeMin: 30,
+    steps: [
+      "Отварить гречку до готовности.",
+      "Обжарить филе грудки, нарезать.",
+      "Добавить нарезанный огурец, перемешать.",
+    ],
+    nutritional: { kcal: 168, protein: 15.4, fat: 2.6, carb: 21.5 },
+    ingredients: [
+      { id: 20015, name: "Гречка ядрица", grams: 200 },
+      { id: 51002, name: "Филе грудки цыплёнка-бройлера", grams: 300 },
+      { id: 60310, name: "Огурцы гладкие", grams: 150 },
+    ],
+  },
+  // Только 1 из 3 в охвате (мука/сахар не синкаются) → 33%, пропускается.
+  {
+    id: 9002,
+    name: "Творожная запеканка",
+    category: "Десерты",
+    servings: 4,
+    timeMin: 50,
+    steps: ["Смешать творог с яйцом, мукой и сахаром.", "Запекать 40 минут."],
+    nutritional: { kcal: 210, protein: 14, fat: 6, carb: 26 },
+    ingredients: [
+      { id: 30440, name: "Творог 5%", grams: 400 },
+      { id: 70001, name: "Мука пшеничная", grams: 60 }, // нет в охвате
+      { id: 70002, name: "Сахар", grams: 50 }, // нет в охвате
     ],
   },
 ];

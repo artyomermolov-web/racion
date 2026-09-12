@@ -88,3 +88,86 @@ export interface VvIngredient {
   /** Процент скидки (для бейджа; null — нет). */
   vvDiscountPct: number | null;
 }
+
+// --- Импорт рецептов ВВ (тикет 05, spec.md шов 1, Q6=a) ----------------------
+// Рецепт из `vkusvill_recipes`: чистые структурные КБЖУ и привязка ингредиентов
+// к товарам ВВ по `id`/`xml_id`. Меню-единицей остаётся `Recipe` Racion; КБЖУ
+// считается из состава (порог сопоставления ≥80% держит состав достаточно полным).
+
+/** Ингредиент рецепта ВВ: ссылка на товар ВВ (по ней мэтч к каталогу) + масса. */
+export interface VvRecipeIngredient {
+  /** id/xml_id товара ВВ — ключ мэтча к каталогу (сопоставленные строки хранят его в vvXmlId). */
+  id: string | number;
+  /** Название (для аудита; мэтч идёт по id, не по имени). */
+  name?: string;
+  /** Масса на всё блюдо, г (для мл — миллилитры, плотность ~1). */
+  grams: number;
+}
+
+/** Рецепт из `vkusvill_recipes` (нужные импорту поля; остальное игнорируется). */
+export interface VvRecipe {
+  id: string | number;
+  name: string;
+  /** Шаги приготовления: массив строк или единая строка с <br>/переносами. */
+  steps: string[] | string;
+  /** Категория рецепта ВВ (→ слоты меню Racion; фолбэк — обед/ужин). */
+  category?: string | null;
+  /** Число порций (default 1). */
+  servings?: number | null;
+  /** Время приготовления, мин. */
+  timeMin?: number | null;
+  /** Сложность 1–3, если ВВ отдаёт; иначе дефолт 1. */
+  difficulty?: number | null;
+  /**
+   * Структурные КБЖУ рецепта ВВ (на порцию) — для аудита. Меню-КБЖУ Racion
+   * считается из состава (computeRecipeNutrition), поэтому это поле информационное.
+   */
+  nutritional?: Partial<FoodNutrients> | null;
+  ingredients: VvRecipeIngredient[];
+}
+
+/** Строка каталога Racion для мэтча ингредиентов рецепта (индексируется по vvXmlId). */
+export interface CatalogEntry {
+  /** id ингредиента в каталоге Racion (Ingredient.id) — цель ссылки рецепта. */
+  ingredientId: string;
+  /** Аллергены каталожного ингредиента (перенос в рецепт при импорте). */
+  allergens?: string[];
+}
+
+/** Индекс каталога: vvXmlId (строкой) → каталожный ингредиент. */
+export type CatalogIndex = Map<string, CatalogEntry>;
+
+/** Ингредиент импортируемого рецепта: ссылка на каталог Racion + масса блюда. */
+export interface RecipeImportItem {
+  ingredientId: string;
+  grams: number;
+}
+
+/** Рецепт ВВ, спроецированный в поля `Recipe` Racion (готово к upsert синком). */
+export interface RecipeImport {
+  name: string;
+  /** Шаги — по одному на строку (в БД склеиваются через \n). */
+  steps: string[];
+  timeMin: number;
+  difficulty: number;
+  servings: number;
+  /** Слоты меню (breakfast|lunch|dinner|snack) — из категории ВВ. */
+  slots: string[];
+  /** Состав: ссылки на каталог Racion + массы (КБЖУ считается по ним). */
+  items: RecipeImportItem[];
+  /** Аллергены — объединение по сопоставленным ингредиентам (перенос, дедуп). */
+  allergens: string[];
+  source: "vkusvill";
+  /** id рецепта ВВ (строкой) — ключ идемпотентного upsert. */
+  vvId: string;
+  /** Структурные КБЖУ рецепта ВВ (аудит); меню считает КБЖУ из состава. */
+  nutrition: FoodNutrients | null;
+}
+
+/** Итог импорта одного рецепта ВВ: готовый рецепт (или пропуск) + доля мэтча. */
+export interface RecipeImportResult {
+  /** Готовый к upsert рецепт или null (matchedRatio ниже порога — пропуск). */
+  recipe: RecipeImport | null;
+  /** Доля сопоставленных с каталогом ингредиентов рецепта, [0,1]. */
+  matchedRatio: number;
+}

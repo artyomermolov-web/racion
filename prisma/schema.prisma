@@ -174,6 +174,15 @@ model Recipe {
   ownerUserId  String?
   baseRecipeId String?
 
+  // --- Провенанс ВкусВилл (тикет 05, ADR-0001) ---
+  // Откуда рецепт: "seed" (стартовый набор) | "vkusvill" (импортирован из ВВ).
+  source    String    @default("seed")
+  // id рецепта ВВ (строкой). Ключ идемпотентного upsert импорта (уникален;
+  // у seed-рецептов null — в SQLite несколько NULL в unique допустимы).
+  vvId      String?   @unique
+  // Когда импорт последний раз обновил рецепт из ВВ (null у seed-рецептов).
+  vvUpdatedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

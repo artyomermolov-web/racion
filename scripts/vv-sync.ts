@@ -13,15 +13,26 @@
 //     той же строке (id сохраняется, source="vkusvill", проставляется vvXmlId);
 //     несопоставленный товар заводится новой строкой каталога (id = vv-<xmlId>).
 //     Несопоставленные seed-ингредиенты остаются с фолбэком (source="seed").
+//  4. Импорт рецептов ВВ (тикет 05): ингредиенты рецепта мэтчатся к каталогу по
+//     id/xml_id товара; при сопоставлении ≥80% рецепт заводится/обновляется как
+//     `Recipe` Racion (source="vkusvill", vvId — ключ upsert), иначе пропускается.
+//     Меню-КБЖУ считается из состава; аллергены — по сопоставленным ингредиентам.
 // Провенанс, таким образом, проставлен по всему каталогу. Сеть изолирована в
 // адаптере lib/vkusvill/client; вся трансформация — чистые модули core/vkusvill.
 
 import { PrismaClient } from "@prisma/client";
 import { productToIngredient } from "../src/core/vkusvill/map";
 import { matchIngredient } from "../src/core/vkusvill/match";
-import type { VvIngredient, VvProduct } from "../src/core/vkusvill/types";
-import { SAMPLE_PRODUCTS } from "../src/core/vkusvill/fixtures";
-import { productsSearchAll } from "../src/lib/vkusvill/client";
+import { recipeToRecipe } from "../src/core/vkusvill/recipe";
+import type {
+  CatalogIndex,
+  RecipeImport,
+  VvIngredient,
+  VvProduct,
+  VvRecipe,
+} from "../src/core/vkusvill/types";
+import { SAMPLE_PRODUCTS, SAMPLE_RECIPES } from "../src/core/vkusvill/fixtures";
+import { productsSearchAll, recipesList } from "../src/lib/vkusvill/client";
 
 const prisma = new PrismaClient();
 
@@ -45,6 +56,23 @@ const CURATED_QUERIES = [
 function isProduct(x: unknown): x is VvProduct {
   const p = x as VvProduct;
   return !!p && typeof p === "object" && p.price != null && typeof p.name === "string";
+}
+
+/** Похоже ли значение на рецепт ВВ (лёгкая проверка перед импортом). */
+function isRecipe(x: unknown): x is VvRecipe {
+  const r = x as VvRecipe;
+  return !!r && typeof r === "object" && typeof r.name === "string" && Array.isArray(r.ingredients);
+}
+
+/** Живой сбор рецептов ВВ (ограниченный стартовый набор, бережём rate-limit). */
+async function fetchLiveRecipes(): Promise<VvRecipe[]> {
+  const res = await recipesList({ maxPages: 3 });
+  const recipes = res.recipes.filter(isRecipe);
+  const note = res.incomplete
+    ? ` ⚠ неполно (${res.error ? `${res.error.code}` : "лимит страниц"})`
+    : "";
+  console.log(`  рецептов получено: ${recipes.length} (${res.pages} стр.)${note}`);
+  return recipes;
 }
 
 /** Живой сбор товаров по курируемому охвату (постранично, mode=full). */
@@ -104,6 +132,83 @@ async function apply(
   return "inserted";
 }
 
+/**
+ * Индекс каталога для мэтча ингредиентов рецепта: строка каталога с настоящим
+ * vvXmlId, доступная по ОБОИМ ключам товара ВВ (числовой id и строковый xml_id) —
+ * рецепт может ссылаться на любой из них. Строится из синканутых товаров (у них
+ * есть оба ключа) в паре со строкой БД (её id/аллергены ищем по vvXmlId).
+ */
+async function buildCatalogIndex(products: VvProduct[]): Promise<CatalogIndex> {
+  const rows = await prisma.ingredient.findMany({
+    where: { vvXmlId: { not: null } },
+    select: { id: true, vvXmlId: true, allergens: { select: { allergen: true } } },
+  });
+  const byXmlId = new Map(
+    rows.map((r) => [r.vvXmlId!, { ingredientId: r.id, allergens: r.allergens.map((a) => a.allergen) }]),
+  );
+  const index: CatalogIndex = new Map();
+  for (const p of products) {
+    const entry = byXmlId.get(String(p.xml_id));
+    if (!entry) continue;
+    index.set(String(p.id), entry);
+    index.set(String(p.xml_id), entry);
+  }
+  return index;
+}
+
+/** Идемпотентный upsert одного импортируемого рецепта (ключ — vvId). */
+async function upsertRecipe(recipe: RecipeImport, now: Date): Promise<void> {
+  const fields = {
+    name: recipe.name,
+    steps: recipe.steps.join("\n"),
+    timeMin: recipe.timeMin,
+    difficulty: recipe.difficulty,
+    servings: recipe.servings,
+    source: recipe.source,
+    vvUpdatedAt: now,
+  };
+  const nested = {
+    ingredients: { create: recipe.items.map((it) => ({ ingredientId: it.ingredientId, grams: it.grams })) },
+    slots: { create: recipe.slots.map((slot) => ({ slot })) },
+  };
+  const existing = await prisma.recipe.findUnique({ where: { vvId: recipe.vvId }, select: { id: true } });
+  if (existing) {
+    // Пересобираем состав/слоты начисто, чтобы правки в источнике доезжали.
+    await prisma.recipe.update({
+      where: { vvId: recipe.vvId },
+      data: {
+        ...fields,
+        ingredients: { deleteMany: {}, create: nested.ingredients.create },
+        slots: { deleteMany: {}, create: nested.slots.create },
+      },
+    });
+  } else {
+    await prisma.recipe.create({ data: { id: `vv-${recipe.vvId}`, vvId: recipe.vvId, ...fields, ...nested } });
+  }
+}
+
+/** Импорт рецептов ВВ по индексу каталога: ≥80% — upsert, иначе пропуск. */
+async function importRecipes(
+  recipes: VvRecipe[],
+  catalogIndex: CatalogIndex,
+  now: Date,
+): Promise<{ imported: number; skipped: number }> {
+  let imported = 0;
+  let skipped = 0;
+  for (const vv of recipes) {
+    const { recipe, matchedRatio } = recipeToRecipe(vv, catalogIndex);
+    if (!recipe) {
+      skipped++;
+      console.log(`  ✗ «${vv.name}» пропущен (мэтч ${(matchedRatio * 100).toFixed(0)}% < 80%)`);
+      continue;
+    }
+    await upsertRecipe(recipe, now);
+    imported++;
+    console.log(`  ✓ «${recipe.name}» импортирован (мэтч ${(matchedRatio * 100).toFixed(0)}%, ${recipe.items.length} ингр.)`);
+  }
+  return { imported, skipped };
+}
+
 async function main() {
   const offline = process.argv.includes("--offline");
   console.log(offline ? "Синк ВкусВилл (оффлайн, фикстуры):" : "Синк ВкусВилл (live MCP):");
@@ -128,10 +233,17 @@ async function main() {
   }
 
   console.log(
-    `Готово: ре-сорс seed ${tally.resourced}, новых ${tally.inserted}, ` +
+    `Каталог: ре-сорс seed ${tally.resourced}, новых ${tally.inserted}, ` +
       `обновлено ${tally.updated}, пропущено ${tally.skipped}. ` +
       `seed-фолбэком осталось ${seedPool.length}.`,
   );
+
+  // Импорт рецептов ВВ поверх обновлённого каталога (тикет 05).
+  const recipes = offline ? SAMPLE_RECIPES : await fetchLiveRecipes();
+  const catalogIndex = await buildCatalogIndex(products);
+  const rec = await importRecipes(recipes, catalogIndex, now);
+  console.log(`Рецепты: импортировано ${rec.imported}, пропущено ${rec.skipped}.`);
+
   if (!offline && tally.resourced + tally.inserted + tally.updated === 0) {
     console.log(
       "Живой синк ничего не принёс (вероятно rate-limit 429). Демо-набор: npm run vv:sync -- --offline",
