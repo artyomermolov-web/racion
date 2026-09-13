@@ -2,10 +2,17 @@
 // сети/БД — тестируется на фикстурах, применяется синком.
 //
 // Рецепт ВВ (`vkusvill_recipes`) несёт шаги, порции и ссылки на товары ВВ по их
-// id/xml_id. Импорт мэтчит эти ссылки к каталогу Racion (после ре-сорса товары ВВ
-// хранят свой SKU в `Ingredient.vvXmlId`) и импортирует рецепт при сопоставлении
-// ≥80% ингредиентов; иначе пропускает — так меню-КБЖУ, которое Racion считает из
-// состава (computeRecipeNutrition), не проседает из-за пропущенной массы.
+// id/xml_id. Импорт сопоставляет каждый ингредиент с каталогом Racion в два шага:
+//  1) точный мэтч по id/xml_id товара (после ре-сорса товар ВВ хранит SKU в
+//     `Ingredient.vvXmlId`);
+//  2) если товара нет в охвате — фолбэк по НАЗВАНИЮ против всего каталога
+//     (`matchCatalogIngredient`: стеммер + синонимы + канон), т.к. нужный продукт
+//     часто уже есть под другим именем/словоформой («Сахар»→«Сахар-песок»).
+//
+// Политика импорта (решение заказчика): рецепты импортируются БЕЗ ПРОПУСКОВ —
+// несопоставленный ингредиент просто выпадает из состава (позже подключим базу
+// продуктов, чтобы его КБЖУ не терялось). Единственный случай пропуска —
+// вырожденный рецепт, где не сопоставился ни один ингредиент (состава нет вовсе).
 //
 // Меню-единицей остаётся `Recipe` Racion: КБЖУ считается из привязанного состава,
 // аллергены — объединение по сопоставленным ингредиентам (как во всём каталоге).
@@ -13,16 +20,15 @@
 
 import type { FoodNutrients } from "@/core/nutrition";
 import { stripVvMarkup } from "./parse";
+import { matchCatalogIngredient } from "./catalog-match";
 import type {
+  CatalogEntry,
   CatalogIndex,
   RecipeImport,
   RecipeImportItem,
   RecipeImportResult,
   VvRecipe,
 } from "./types";
-
-/** Порог сопоставления ингредиентов, при котором рецепт импортируется (Q6=a). */
-export const RECIPE_MATCH_THRESHOLD = 0.8;
 
 /** Слоты меню по умолчанию — рецепт без явной категории остаётся размещаемым. */
 const DEFAULT_SLOTS = ["lunch", "dinner"];
@@ -37,11 +43,27 @@ const SLOT_RULES: [RegExp, string[]][] = [
   [/гарнир|основн|горяч|второе|паст|ужин/i, ["lunch", "dinner"]],
 ];
 
+/** Слоты по ключевым словам текста (или [] — ни одно правило не сработало). */
+function slotsByKeyword(text: string | null | undefined): string[] {
+  if (!text) return [];
+  for (const [re, slots] of SLOT_RULES) if (re.test(text)) return [...slots];
+  return [];
+}
+
 /** Категория рецепта ВВ → слоты меню (фолбэк — обед и ужин). */
 export function categoryToSlots(category: string | null | undefined): string[] {
-  if (!category) return [...DEFAULT_SLOTS];
-  for (const [re, slots] of SLOT_RULES) if (re.test(category)) return [...slots];
-  return [...DEFAULT_SLOTS];
+  const byCat = slotsByKeyword(category);
+  return byCat.length ? byCat : [...DEFAULT_SLOTS];
+}
+
+/**
+ * Слоты меню из категории И названия рецепта (объединение). Название несёт сигнал
+ * слота не хуже категории: «Творожная запеканка» в категории «Десерты» — это ещё и
+ * завтрак. Если ни то ни другое не распознано — обед и ужин (рецепт размещаем).
+ */
+export function deriveSlots(category: string | null | undefined, name: string): string[] {
+  const union = [...new Set([...slotsByKeyword(category), ...slotsByKeyword(name)])];
+  return union.length ? union : [...DEFAULT_SLOTS];
 }
 
 /**
@@ -77,16 +99,22 @@ function fullNutrition(partial: Partial<FoodNutrients> | null | undefined): Food
 }
 
 /**
- * Проецирует рецепт ВВ в поля `Recipe` Racion. Ингредиенты мэтчатся к каталогу по
- * id/xml_id товара ВВ; при сопоставлении ≥80% возвращает готовый к upsert рецепт,
- * иначе `recipe: null` (пропуск). `matchedRatio` отдаётся честно в обоих случаях.
- * Повторные ссылки на один товар суммируются в одну строку состава; аллергены —
- * объединение по сопоставленным ингредиентам (несопоставленные в состав не входят,
- * их аллергены не переносятся — это и ограничивает порог ≥80%).
+ * Проецирует рецепт ВВ в поля `Recipe` Racion. Каждый ингредиент сопоставляется с
+ * каталогом сперва по id/xml_id товара, затем — фолбэком по названию против всего
+ * каталога. Рецепт импортируется, если сопоставился хотя бы один ингредиент (без
+ * пропусков — решение заказчика); несопоставленные выпадают из состава. Если не
+ * сопоставился НИ один ингредиент — `recipe: null` (состава нет). `matchedRatio`
+ * отдаётся честно. Повторные ссылки на один товар суммируются в одну строку
+ * состава; аллергены — объединение по сопоставленным ингредиентам.
+ *
+ * `catalog` — полный список каталога Racion для фолбэк-мэтча по имени (не только
+ * товары ВВ: искомый продукт может быть seed-строкой). Необязателен — без него
+ * работает лишь точный мэтч по id.
  */
 export function recipeToRecipe(
   vvRecipe: VvRecipe,
   catalogIndex: CatalogIndex,
+  catalog: readonly CatalogEntry[] = [],
 ): RecipeImportResult {
   const ingredients = vvRecipe.ingredients ?? [];
   const total = ingredients.length;
@@ -96,15 +124,21 @@ export function recipeToRecipe(
   const allergens = new Set<string>();
   let matchedCount = 0;
   for (const ing of ingredients) {
-    const entry = catalogIndex.get(String(ing.id));
-    if (!entry) continue; // несопоставленный — в состав не идёт
+    // Шаг 1 — точный мэтч по id/xml_id товара ВВ; шаг 2 — фолбэк по названию.
+    let entry = catalogIndex.get(String(ing.id));
+    if (!entry && ing.name && catalog.length) {
+      entry = matchCatalogIngredient(ing.name, catalog) ?? undefined;
+    }
+    if (!entry) continue; // несопоставленный — в состав не идёт (рецепт не пропускаем)
     matchedCount++;
     gramsById.set(entry.ingredientId, (gramsById.get(entry.ingredientId) ?? 0) + ing.grams);
     for (const a of entry.allergens ?? []) allergens.add(a);
   }
 
   const matchedRatio = total === 0 ? 0 : matchedCount / total;
-  if (matchedRatio < RECIPE_MATCH_THRESHOLD) return { recipe: null, matchedRatio };
+  // Без пропусков: пропускаем только вырожденный рецепт без единого сопоставления
+  // (состава нет — КБЖУ считать не из чего, в меню он был бы пустышкой).
+  if (gramsById.size === 0) return { recipe: null, matchedRatio };
 
   const items: RecipeImportItem[] = [...gramsById].map(([ingredientId, grams]) => ({
     ingredientId,
@@ -117,7 +151,7 @@ export function recipeToRecipe(
     timeMin: clampInt(vvRecipe.timeMin, 0, 24 * 60, 0),
     difficulty: clampInt(vvRecipe.difficulty, 1, 3, 1),
     servings: clampInt(vvRecipe.servings, 1, 99, 1),
-    slots: categoryToSlots(vvRecipe.category),
+    slots: deriveSlots(vvRecipe.category, vvRecipe.name),
     items,
     allergens: [...allergens],
     source: "vkusvill",

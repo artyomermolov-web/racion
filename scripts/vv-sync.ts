@@ -25,6 +25,7 @@ import { productToIngredient } from "../src/core/vkusvill/map";
 import { matchIngredient } from "../src/core/vkusvill/match";
 import { recipeToRecipe } from "../src/core/vkusvill/recipe";
 import type {
+  CatalogEntry,
   CatalogIndex,
   RecipeImport,
   VvIngredient,
@@ -133,19 +134,40 @@ async function apply(
 }
 
 /**
- * Индекс каталога для мэтча ингредиентов рецепта: строка каталога с настоящим
- * vvXmlId, доступная по ОБОИМ ключам товара ВВ (числовой id и строковый xml_id) —
- * рецепт может ссылаться на любой из них. Строится из синканутых товаров (у них
- * есть оба ключа) в паре со строкой БД (её id/аллергены ищем по vvXmlId).
+ * Строит данные для мэтча ингредиентов рецепта:
+ *  • `index` — точный мэтч по id/xml_id товара ВВ. Строка каталога с настоящим
+ *    vvXmlId доступна по ОБОИМ ключам товара (числовой id и строковый xml_id) —
+ *    рецепт может ссылаться на любой из них.
+ *  • `list` — ВЕСЬ каталог (включая seed-фолбэк) для фолбэка по названию: нужный
+ *    продукт часто уже есть под другим именем/словоформой, даже если не синкался
+ *    как товар ВВ (мука/сахар/соль…).
  */
-async function buildCatalogIndex(products: VvProduct[]): Promise<CatalogIndex> {
+async function buildCatalog(
+  products: VvProduct[],
+): Promise<{ index: CatalogIndex; list: CatalogEntry[] }> {
+  // Только базовый каталог: импортируемые рецепты общие (ownerUserId=null), поэтому
+  // их состав не должен ссылаться на кастом-продукты конкретных пользователей.
   const rows = await prisma.ingredient.findMany({
-    where: { vvXmlId: { not: null } },
-    select: { id: true, vvXmlId: true, allergens: { select: { allergen: true } } },
+    where: { isCustom: false },
+    select: {
+      id: true,
+      name: true,
+      vvXmlId: true,
+      allergens: { select: { allergen: true } },
+    },
   });
-  const byXmlId = new Map(
-    rows.map((r) => [r.vvXmlId!, { ingredientId: r.id, allergens: r.allergens.map((a) => a.allergen) }]),
-  );
+  const list: CatalogEntry[] = rows.map((r) => ({
+    ingredientId: r.id,
+    name: r.name,
+    allergens: r.allergens.map((a) => a.allergen),
+  }));
+
+  const byXmlId = new Map<string, CatalogEntry>();
+  for (const r of rows) {
+    if (r.vvXmlId) {
+      byXmlId.set(r.vvXmlId, { ingredientId: r.id, name: r.name, allergens: r.allergens.map((a) => a.allergen) });
+    }
+  }
   const index: CatalogIndex = new Map();
   for (const p of products) {
     const entry = byXmlId.get(String(p.xml_id));
@@ -153,7 +175,7 @@ async function buildCatalogIndex(products: VvProduct[]): Promise<CatalogIndex> {
     index.set(String(p.id), entry);
     index.set(String(p.xml_id), entry);
   }
-  return index;
+  return { index, list };
 }
 
 /** Идемпотентный upsert одного импортируемого рецепта (ключ — vvId). */
@@ -187,24 +209,30 @@ async function upsertRecipe(recipe: RecipeImport, now: Date): Promise<void> {
   }
 }
 
-/** Импорт рецептов ВВ по индексу каталога: ≥80% — upsert, иначе пропуск. */
+/**
+ * Импорт рецептов ВВ: мэтч по id + фолбэк по названию против всего каталога;
+ * импорт без пропусков (несопоставленный ингредиент выпадает из состава).
+ * Пропуск только у вырожденного рецепта без единого сопоставления.
+ */
 async function importRecipes(
   recipes: VvRecipe[],
   catalogIndex: CatalogIndex,
+  catalogList: CatalogEntry[],
   now: Date,
 ): Promise<{ imported: number; skipped: number }> {
   let imported = 0;
   let skipped = 0;
   for (const vv of recipes) {
-    const { recipe, matchedRatio } = recipeToRecipe(vv, catalogIndex);
+    const { recipe, matchedRatio } = recipeToRecipe(vv, catalogIndex, catalogList);
     if (!recipe) {
       skipped++;
-      console.log(`  ✗ «${vv.name}» пропущен (мэтч ${(matchedRatio * 100).toFixed(0)}% < 80%)`);
+      console.log(`  ✗ «${vv.name}» пропущен (не сопоставлен ни один ингредиент)`);
       continue;
     }
     await upsertRecipe(recipe, now);
     imported++;
-    console.log(`  ✓ «${recipe.name}» импортирован (мэтч ${(matchedRatio * 100).toFixed(0)}%, ${recipe.items.length} ингр.)`);
+    const pct = (matchedRatio * 100).toFixed(0);
+    console.log(`  ✓ «${recipe.name}» импортирован (мэтч ${pct}%, ${recipe.items.length} ингр.)`);
   }
   return { imported, skipped };
 }
@@ -240,8 +268,8 @@ async function main() {
 
   // Импорт рецептов ВВ поверх обновлённого каталога (тикет 05).
   const recipes = offline ? SAMPLE_RECIPES : await fetchLiveRecipes();
-  const catalogIndex = await buildCatalogIndex(products);
-  const rec = await importRecipes(recipes, catalogIndex, now);
+  const { index, list } = await buildCatalog(products);
+  const rec = await importRecipes(recipes, index, list, now);
   console.log(`Рецепты: импортировано ${rec.imported}, пропущено ${rec.skipped}.`);
 
   if (!offline && tally.resourced + tally.inserted + tally.updated === 0) {

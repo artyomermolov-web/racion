@@ -1,24 +1,36 @@
 import { describe, it, expect } from "vitest";
-import { recipeToRecipe, categoryToSlots, RECIPE_MATCH_THRESHOLD } from "./recipe";
-import type { CatalogIndex, VvRecipe } from "./types";
+import { recipeToRecipe, categoryToSlots, deriveSlots } from "./recipe";
+import type { CatalogEntry, CatalogIndex, VvRecipe } from "./types";
 
-// Импорт рецептов ВВ (тикет 05, spec.md шов 1, Q6=a). Проверяем внешнее поведение
-// чистой трансформации: импорт при сопоставлении ≥80% ингредиентов, пропуск при
-// <80%, перенос шагов/аллергенов, привязка состава к каталогу по id товара ВВ.
+// Импорт рецептов ВВ (тикет 05, spec.md шов 1, Q6=a + доработка «без пропусков»).
+// Проверяем внешнее поведение чистой трансформации: точный мэтч по id, фолбэк по
+// названию, импорт без пропусков (несопоставленный ингредиент выпадает из состава),
+// перенос шагов/аллергенов, привязка состава к каталогу.
 
-// Каталог Racion для мэтча ингредиентов рецепта. Синк индексирует строку каталога
-// по ОБОИМ ключам товара ВВ (числовой id и строковый xml_id), т.к. рецепт может
-// ссылаться на любой из них; поэтому у молока здесь две записи на один ингредиент.
-const catalog: CatalogIndex = new Map([
-  ["0040100", { ingredientId: "moloko32", allergens: ["milk"] }],
-  ["40100", { ingredientId: "moloko32", allergens: ["milk"] }],
-  ["0020015", { ingredientId: "grechka", allergens: [] }],
-  ["0041220", { ingredientId: "yaico", allergens: ["egg"] }],
-  ["0051002", { ingredientId: "kurinoe-file", allergens: ["poultry"] }],
-  ["0060310", { ingredientId: "ogurcy", allergens: [] }],
+// Каталог по id/xml_id товара ВВ (как строит синк). У молока две записи на один
+// ингредиент — синк индексирует по числовому id и строковому xml_id.
+const catalog: CatalogIndex = new Map<string, CatalogEntry>([
+  ["0040100", { ingredientId: "moloko32", name: "Молоко 3.2%", allergens: ["milk"] }],
+  ["40100", { ingredientId: "moloko32", name: "Молоко 3.2%", allergens: ["milk"] }],
+  ["0020015", { ingredientId: "grechka", name: "Гречка ядрица", allergens: [] }],
+  ["0041220", { ingredientId: "yaico", name: "Яйцо куриное С1", allergens: ["egg"] }],
+  ["0051002", { ingredientId: "kurinoe-file", name: "Куриное филе грудки", allergens: ["poultry"] }],
+  ["0060310", { ingredientId: "ogurcy", name: "Огурцы", allergens: [] }],
 ]);
 
-// Рецепт с 5 ингредиентами, все сопоставлены (5/5 = 100%).
+// Полный список каталога для фолбэк-мэтча по названию (не только товары ВВ).
+const catalogList: CatalogEntry[] = [
+  { ingredientId: "grechka", name: "Гречка ядрица", allergens: [] },
+  { ingredientId: "kurinoe-file", name: "Куриное филе грудки", allergens: ["poultry"] },
+  { ingredientId: "ogurcy", name: "Огурцы", allergens: [] },
+  { ingredientId: "moloko32", name: "Молоко 3.2%", allergens: ["milk"] },
+  { ingredientId: "yaico", name: "Яйцо куриное С1", allergens: ["egg"] },
+  { ingredientId: "muka", name: "Мука пшеничная в/с", allergens: ["gluten"] },
+  { ingredientId: "sahar", name: "Сахар-песок", allergens: [] },
+  { ingredientId: "tvorog5", name: "Творог 5%", allergens: ["milk"] },
+];
+
+// Рецепт с 5 ингредиентами, все сопоставлены по id (5/5 = 100%).
 const fullMatch: VvRecipe = {
   id: 9001,
   name: "Гречка с курицей и овощами",
@@ -36,7 +48,7 @@ const fullMatch: VvRecipe = {
   ],
 };
 
-describe("recipeToRecipe — импорт при сопоставлении ≥80%", () => {
+describe("recipeToRecipe — базовый импорт (мэтч по id)", () => {
   it("все ингредиенты сопоставлены → рецепт импортируется, ratio=1", () => {
     const { recipe, matchedRatio } = recipeToRecipe(fullMatch, catalog);
     expect(matchedRatio).toBe(1);
@@ -44,43 +56,90 @@ describe("recipeToRecipe — импорт при сопоставлении ≥8
     expect(recipe!.name).toBe("Гречка с курицей и овощами");
     expect(recipe!.source).toBe("vkusvill");
     expect(recipe!.vvId).toBe("9001");
-  });
-
-  it("ровно 80% (4 из 5) → импортируется (порог включительно)", () => {
-    const vv: VvRecipe = {
-      ...fullMatch,
-      ingredients: [
-        { id: "0020015", grams: 200 },
-        { id: "0051002", grams: 300 },
-        { id: "0060310", grams: 100 },
-        { id: "0041220", grams: 60 },
-        { id: "9999999", grams: 30 }, // нет в каталоге
-      ],
-    };
-    const { recipe, matchedRatio } = recipeToRecipe(vv, catalog);
-    expect(matchedRatio).toBeCloseTo(0.8);
-    expect(matchedRatio).toBeGreaterThanOrEqual(RECIPE_MATCH_THRESHOLD);
-    expect(recipe).not.toBeNull();
-    // Несопоставленный ингредиент в состав не попадает.
-    expect(recipe!.items).toHaveLength(4);
-    expect(recipe!.items.map((i) => i.ingredientId)).not.toContain("9999999");
+    expect(recipe!.items).toHaveLength(5);
   });
 });
 
-describe("recipeToRecipe — пропуск при <80%", () => {
-  it("3 из 5 (60%) → пропуск (recipe=null), ratio отдаётся честно", () => {
+describe("recipeToRecipe — фолбэк по названию (id вне охвата)", () => {
+  it("товара нет в индексе → сопоставляется по имени против каталога", () => {
+    const vv: VvRecipe = {
+      ...fullMatch,
+      id: 9010,
+      name: "Сырники",
+      ingredients: [
+        { id: "0041220", name: "Яйцо", grams: 60 }, // по id
+        { id: 70001, name: "Мука пшеничная", grams: 80 }, // id вне охвата → по имени
+        { id: 70002, name: "Сахар", grams: 40 }, // id вне охвата → по имени (канон)
+        { id: 70003, name: "Творог 5%", grams: 400 }, // id вне охвата → по имени
+      ],
+    };
+    const { recipe, matchedRatio } = recipeToRecipe(vv, catalog, catalogList);
+    expect(matchedRatio).toBe(1);
+    expect(recipe).not.toBeNull();
+    const ids = recipe!.items.map((i) => i.ingredientId).sort();
+    expect(ids).toEqual(["muka", "sahar", "tvorog5", "yaico"]);
+  });
+
+  it("без переданного каталога фолбэк не работает (только точный id)", () => {
     const vv: VvRecipe = {
       ...fullMatch,
       ingredients: [
-        { id: "0020015", grams: 200 },
-        { id: "0051002", grams: 300 },
-        { id: "0060310", grams: 100 },
-        { id: "8888888", grams: 40 },
-        { id: "7777777", grams: 40 },
+        { id: "0020015", name: "Гречка", grams: 200 },
+        { id: 70001, name: "Мука пшеничная", grams: 80 }, // нет каталога → не найдётся
       ],
     };
-    const { recipe, matchedRatio } = recipeToRecipe(vv, catalog);
-    expect(matchedRatio).toBeCloseTo(0.6);
+    const { recipe, matchedRatio } = recipeToRecipe(vv, catalog); // без catalogList
+    expect(matchedRatio).toBe(0.5);
+    expect(recipe!.items).toHaveLength(1);
+  });
+});
+
+describe("recipeToRecipe — импорт без пропусков", () => {
+  it("несопоставленный ингредиент выпадает из состава, рецепт импортируется", () => {
+    const vv: VvRecipe = {
+      ...fullMatch,
+      id: 9020,
+      ingredients: [
+        { id: "0020015", name: "Гречка", grams: 200 },
+        { id: "0051002", name: "Филе куриное", grams: 300 },
+        { id: 90001, name: "Паста мисо", grams: 20 }, // экзотика — нет в каталоге
+      ],
+    };
+    const { recipe, matchedRatio } = recipeToRecipe(vv, catalog, catalogList);
+    expect(matchedRatio).toBeCloseTo(2 / 3);
+    expect(recipe).not.toBeNull(); // НЕ пропускаем
+    expect(recipe!.items).toHaveLength(2);
+    expect(recipe!.items.map((i) => i.ingredientId)).not.toContain(undefined);
+  });
+
+  it("низкое покрытие (1 из 5) всё равно импортируется", () => {
+    const vv: VvRecipe = {
+      ...fullMatch,
+      id: 9021,
+      ingredients: [
+        { id: "0020015", name: "Гречка", grams: 100 },
+        { id: 90001, name: "Мисо", grams: 10 },
+        { id: 90002, name: "Нори", grams: 5 },
+        { id: 90003, name: "Дайкон", grams: 30 },
+        { id: 90004, name: "Комбу", grams: 5 },
+      ],
+    };
+    const { recipe, matchedRatio } = recipeToRecipe(vv, catalog, catalogList);
+    expect(matchedRatio).toBeCloseTo(0.2);
+    expect(recipe).not.toBeNull();
+    expect(recipe!.items).toHaveLength(1);
+  });
+
+  it("ни один ингредиент не сопоставлен → пропуск (состава нет)", () => {
+    const vv: VvRecipe = {
+      ...fullMatch,
+      ingredients: [
+        { id: 90001, name: "Мисо", grams: 10 },
+        { id: 90002, name: "Нори", grams: 5 },
+      ],
+    };
+    const { recipe, matchedRatio } = recipeToRecipe(vv, catalog, catalogList);
+    expect(matchedRatio).toBe(0);
     expect(recipe).toBeNull();
   });
 
@@ -94,11 +153,7 @@ describe("recipeToRecipe — пропуск при <80%", () => {
 describe("recipeToRecipe — перенос шагов", () => {
   it("массив шагов переносится как есть", () => {
     const { recipe } = recipeToRecipe(fullMatch, catalog);
-    expect(recipe!.steps).toEqual([
-      "Отварить гречку.",
-      "Обжарить филе.",
-      "Добавить овощи.",
-    ]);
+    expect(recipe!.steps).toEqual(["Отварить гречку.", "Обжарить филе.", "Добавить овощи."]);
   });
 
   it("строка шагов с <br>/переносами и HTML-мусором → массив чистых строк", () => {
@@ -107,15 +162,10 @@ describe("recipeToRecipe — перенос шагов", () => {
       steps: "Отварить гречку.<br>Обжарить филе.&nbsp;<br> Добавить овощи. ",
     };
     const { recipe } = recipeToRecipe(vv, catalog);
-    expect(recipe!.steps).toEqual([
-      "Отварить гречку.",
-      "Обжарить филе.",
-      "Добавить овощи.",
-    ]);
+    expect(recipe!.steps).toEqual(["Отварить гречку.", "Обжарить филе.", "Добавить овощи."]);
   });
 
   it("отсутствующие шаги (неполный ответ ВВ) → пустой массив, не падение", () => {
-    // Живой ответ может не отдать steps; isRecipe их не проверяет — не должно падать.
     const vv = { ...fullMatch, steps: undefined } as unknown as VvRecipe;
     const { recipe } = recipeToRecipe(vv, catalog);
     expect(recipe).not.toBeNull();
@@ -126,22 +176,20 @@ describe("recipeToRecipe — перенос шагов", () => {
 describe("recipeToRecipe — перенос аллергенов (union по сопоставленным)", () => {
   it("аллергены собираются из каталожных ингредиентов, без повторов", () => {
     const { recipe } = recipeToRecipe(fullMatch, catalog);
-    // moloko→milk, yaico→egg, kurinoe-file→poultry; гречка/огурцы — пусто.
     expect([...recipe!.allergens].sort()).toEqual(["egg", "milk", "poultry"]);
   });
 
-  it("аллерген несопоставленного ингредиента не переносится (его нет в составе)", () => {
+  it("аллерген несопоставленного ингредиента не переносится", () => {
     const vv: VvRecipe = {
       ...fullMatch,
       ingredients: [
-        { id: "0020015", grams: 200 }, // гречка, нет аллергенов
-        { id: "0051002", grams: 300 }, // курица → poultry
-        { id: "0060310", grams: 100 }, // огурцы
-        { id: "0040100", grams: 50 }, // молоко → milk
-        { id: "5550000", grams: 20 }, // нет в каталоге (был бы, скажем, орех)
+        { id: "0020015", name: "Гречка", grams: 200 },
+        { id: "0051002", name: "Филе куриное", grams: 300 },
+        { id: "0040100", name: "Молоко", grams: 50 },
+        { id: 90001, name: "Арахис жареный", grams: 20 }, // нет в каталоге → nuts не переносится
       ],
     };
-    const { recipe } = recipeToRecipe(vv, catalog);
+    const { recipe } = recipeToRecipe(vv, catalog, catalogList);
     expect([...recipe!.allergens].sort()).toEqual(["milk", "poultry"]);
   });
 });
@@ -153,15 +201,13 @@ describe("recipeToRecipe — состав, порции, слоты, КБЖУ", 
     expect(recipe!.items).toContainEqual({ ingredientId: "kurinoe-file", grams: 300 });
   });
 
-  it("повторный товар ВВ в рецепте суммирует граммы (одна строка состава)", () => {
+  it("повторный товар в рецепте суммирует граммы (одна строка состава)", () => {
     const vv: VvRecipe = {
       ...fullMatch,
       ingredients: [
-        { id: "0020015", grams: 150 },
-        { id: "0020015", grams: 50 }, // тот же товар — суммируется
-        { id: "0051002", grams: 300 },
-        { id: "0060310", grams: 100 },
-        { id: "0041220", grams: 60 },
+        { id: "0020015", name: "Гречка", grams: 150 },
+        { id: "0020015", name: "Гречка", grams: 50 }, // тот же товар — суммируется
+        { id: "0051002", name: "Филе", grams: 300 },
       ],
     };
     const { recipe } = recipeToRecipe(vv, catalog);
@@ -184,8 +230,7 @@ describe("recipeToRecipe — состав, порции, слоты, КБЖУ", 
   });
 
   it("без структурных КБЖУ → nutrition=null (меню посчитает из состава)", () => {
-    const vv: VvRecipe = { ...fullMatch, nutritional: null };
-    const { recipe } = recipeToRecipe(vv, catalog);
+    const { recipe } = recipeToRecipe({ ...fullMatch, nutritional: null }, catalog);
     expect(recipe!.nutrition).toBeNull();
   });
 });
@@ -202,9 +247,23 @@ describe("categoryToSlots — категория рецепта ВВ → сло�
     expect(categoryToSlots("Десерты")).toEqual(["snack"]);
   });
 
-  it("неизвестная/пустая категория → обед и ужин (фолбэк, рецепт остаётся размещаемым)", () => {
+  it("неизвестная/пустая категория → обед и ужин (фолбэк)", () => {
     expect(categoryToSlots("Основные блюда")).toEqual(["lunch", "dinner"]);
     expect(categoryToSlots(null)).toEqual(["lunch", "dinner"]);
     expect(categoryToSlots(undefined)).toEqual(["lunch", "dinner"]);
+  });
+});
+
+describe("deriveSlots — слоты из категории И названия", () => {
+  it("название дополняет слоты категории (запеканка-десерт → snack + breakfast)", () => {
+    expect(deriveSlots("Десерты", "Творожная запеканка").sort()).toEqual(["breakfast", "snack"]);
+  });
+
+  it("сигнал только в названии, категория неизвестна", () => {
+    expect(deriveSlots("Разное", "Овсяная каша")).toEqual(["breakfast"]);
+  });
+
+  it("ничего не распознано → обед и ужин", () => {
+    expect(deriveSlots(null, "Блюдо дня")).toEqual(["lunch", "dinner"]);
   });
 });

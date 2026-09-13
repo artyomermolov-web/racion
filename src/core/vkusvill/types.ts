@@ -126,15 +126,17 @@ export interface VvRecipe {
   ingredients: VvRecipeIngredient[];
 }
 
-/** Строка каталога Racion для мэтча ингредиентов рецепта (индексируется по vvXmlId). */
+/** Строка каталога Racion для мэтча ингредиентов рецепта. */
 export interface CatalogEntry {
   /** id ингредиента в каталоге Racion (Ingredient.id) — цель ссылки рецепта. */
   ingredientId: string;
+  /** Название каталожного ингредиента — для фолбэк-мэтча по имени. */
+  name: string;
   /** Аллергены каталожного ингредиента (перенос в рецепт при импорте). */
   allergens?: string[];
 }
 
-/** Индекс каталога: vvXmlId (строкой) → каталожный ингредиент. */
+/** Индекс каталога по id/xml_id товара ВВ → каталожный ингредиент (точный мэтч). */
 export type CatalogIndex = Map<string, CatalogEntry>;
 
 /** Ингредиент импортируемого рецепта: ссылка на каталог Racion + масса блюда. */
