@@ -8,7 +8,9 @@
 //  2. Вычет запаса дома (только real-лоты кладовки; здесь — шов, по умолчанию 0).
 //  3. Округление до целых пачек: packsToBuy = ceil((need − onHand) / packSize),
 //     не меньше 0; остаток позиции = packsToBuy·packSize − чистая потребность.
-//  4. Сумма ₽ = Σ packsToBuy · pricePerPack.
+//  4. Сумма ₽ = Σ packsToBuy · pricePerPack — только по позициям, сопоставленным
+//     с товаром ВВ (source=vkusvill). Несопоставленные остаются в списке (и в
+//     КБЖУ/меню), но из стоимости исключены; смета помечается `partial` (тикет 03).
 
 import type {
   ShoppingIngredient,
@@ -65,6 +67,9 @@ function toLine(
   const packsToBuy =
     ing.packSize > 0 && netNeed > 0 ? Math.max(0, Math.ceil(netNeed / ing.packSize - EPS)) : 0;
   const leftover = Math.max(0, packsToBuy * ing.packSize - netNeed);
+  // Цена в смету идёт только у сопоставленных с ВВ (тикет 03). Несопоставленные
+  // остаются в списке (и в КБЖУ/меню), но их фолбэк-цена в стоимость не попадает.
+  const priced = ing.source === "vkusvill";
   return {
     ingredientId: ing.id,
     name: ing.name,
@@ -77,7 +82,9 @@ function toLine(
     pricePerPack: ing.pricePerPack,
     packsToBuy,
     leftover,
-    lineCost: packsToBuy * ing.pricePerPack,
+    priced,
+    lineCost: priced ? packsToBuy * ing.pricePerPack : 0,
+    vvXmlId: ing.vvXmlId ?? null,
   };
 }
 
@@ -106,5 +113,8 @@ export function buildShoppingList(input: ShoppingListInput): ShoppingList {
   );
 
   const totalCost = lines.reduce((sum, l) => sum + l.lineCost, 0);
-  return { lines, totalCost };
+  // «Дыра» в смете — покупаемая позиция (packsToBuy>0) без реальной цены ВВ.
+  // Полностью покрытые кладовкой (0 пачек) стоимость и так не меняют — не дыра.
+  const excludedCount = lines.filter((l) => !l.priced && l.packsToBuy > 0).length;
+  return { lines, totalCost, partial: excludedCount > 0, excludedCount };
 }

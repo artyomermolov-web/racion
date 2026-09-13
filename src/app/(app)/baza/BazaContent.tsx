@@ -11,6 +11,7 @@ import {
   formatTime,
   label,
   massUnit,
+  trimNum,
 } from "@/lib/food-labels";
 
 const TABS = [
@@ -49,6 +50,24 @@ function Macros({
       <span style={{ color: "var(--c)" }}>У {c}</span>
       <span style={{ color: "var(--fb)" }}>К {fiber}</span>
     </span>
+  );
+}
+
+// Цена товара ВкусВилл (тикет 01): текущая ₽ за единицу продажи; при скидке —
+// старая цена зачёркнута и бейдж «−N%». Смета считается по текущей (не по карте).
+function VvPrice({ row }: { row: IngredientRow }) {
+  const per = row.unit === "pcs" ? "шт" : "упаковку";
+  return (
+    <div className="food-price num">
+      <span className="food-price-cur">{trimNum(row.pricePerPack)} ₽</span>
+      <span className="food-price-per"> за {per}</span>
+      {row.vvPriceOld != null ? (
+        <span className="food-price-old">{trimNum(row.vvPriceOld)} ₽</span>
+      ) : null}
+      {row.vvDiscountPct != null ? (
+        <span className="badge badge-sale">−{trimNum(row.vvDiscountPct)}%</span>
+      ) : null}
+    </div>
   );
 }
 
@@ -172,6 +191,9 @@ export function BazaContent({
                   <div className="food-title">
                     {i.name}
                     {i.own ? <span className="badge">Своё</span> : null}
+                    {i.source === "vkusvill" ? (
+                      <span className="badge badge-vv">Данные ВкусВилл</span>
+                    ) : null}
                   </div>
                   <div className="food-sub num">
                     {i.per100.kcal} ккал · на 100 {massUnit(i.unit)}
@@ -185,6 +207,7 @@ export function BazaContent({
                     c={i.per100.carb}
                     fiber={i.per100.fiber}
                   />
+                  {i.source === "vkusvill" ? <VvPrice row={i} /> : null}
                 </div>
               </div>
             ))}

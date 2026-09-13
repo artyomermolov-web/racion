@@ -17,6 +17,7 @@ import type { PurchaseLineInput, PurchaseSnapshot } from "@/core/pantry";
 import { SegmentedControl } from "@/components/ios/SegmentedControl";
 import { syncShoppingListAction } from "@/app/actions/shopping";
 import { confirmPurchaseAction, type PantryRefresh } from "@/app/actions/pantry";
+import { createCartLinksAction, type CartLinksResult } from "@/app/actions/cart";
 import { useClientMap } from "./useClientMap";
 import { qty, unitLabel } from "./format";
 
@@ -62,11 +63,13 @@ export function PokupkiContent({ list, onList, onConfirmed, onGoToPantry }: Prop
   const mounted = overridesReady && purchasedReady;
   const [compact, setCompact] = useState(false);
   const [snapshot, setSnapshot] = useState<PurchaseSnapshot | null>(null);
+  const [cart, setCart] = useState<CartLinksResult | null>(null);
   const [pending, startTransition] = useTransition();
 
   /** Обновить из плана: ре-синк с текущей неделей (не-замороженные строки). */
   const sync = () => {
     setSnapshot(null);
+    setCart(null);
     startTransition(async () => {
       const fresh = await syncShoppingListAction();
       if (fresh) onList(fresh);
@@ -88,25 +91,30 @@ export function PokupkiContent({ list, onList, onConfirmed, onGoToPantry }: Prop
   };
 
   // Эффективные строки (с учётом ручных правок) и итоги.
-  const { lines, total, remaining, boughtCount, editsCount } = useMemo(() => {
+  const { lines, total, remaining, boughtCount, editsCount, approxCount } = useMemo(() => {
     const eff: EffectiveLine[] = list.lines.map((l) => {
       const override = overrides[l.ingredientId];
       const frozen = override !== undefined;
       const effectivePacks = frozen ? override : l.packsToBuy;
       const effLeftover = Math.max(0, effectivePacks * l.packSize - l.netNeed);
-      const effCost = effectivePacks * l.pricePerPack;
+      // Несопоставленные с ВВ (l.priced=false) в смету не идут — цена приблизительна.
+      const effCost = l.priced ? effectivePacks * l.pricePerPack : 0;
       return { ...l, effectivePacks, frozen, effLeftover, effCost };
     });
     let total = 0;
     let remaining = 0;
     let boughtCount = 0;
+    // Дыры в смете: то же правило, что excludedCount в ядре (list.ts), но по
+    // ЭФФЕКТИВНЫМ пачкам — с учётом ручных правок числа пачек на клиенте.
+    let approxCount = 0;
     for (const l of eff) {
       total += l.effCost;
       if (purchased[l.ingredientId]) boughtCount += 1;
       else remaining += l.effCost;
+      if (!l.priced && l.effectivePacks > 0) approxCount += 1;
     }
     const editsCount = eff.filter((l) => l.frozen).length;
-    return { lines: eff, total, remaining, boughtCount, editsCount };
+    return { lines: eff, total, remaining, boughtCount, editsCount, approxCount };
   }, [list, overrides, purchased]);
 
   /** Подтвердить покупку: переносим купленное в кладовку, показываем снапшот. */
@@ -118,7 +126,9 @@ export function PokupkiContent({ list, onList, onConfirmed, onGoToPantry }: Prop
         name: l.name,
         packsBought: l.effectivePacks,
         packSize: l.packSize,
-        pricePerPack: l.pricePerPack,
+        // Несопоставленные с ВВ (тикет 03): продукт уезжает в кладовку, но цены нет —
+        // в снапшот кладём 0, чтобы зафиксированная сумма не выдумывала стоимость.
+        pricePerPack: l.priced ? l.pricePerPack : 0,
       }));
     if (payload.length === 0) return;
     startTransition(async () => {
@@ -127,6 +137,7 @@ export function PokupkiContent({ list, onList, onConfirmed, onGoToPantry }: Prop
       persistOverrides({});
       persistPurchased({});
       setSnapshot(snapshot);
+      setCart(null);
       onConfirmed(refresh);
     });
   };
@@ -143,6 +154,17 @@ export function PokupkiContent({ list, onList, onConfirmed, onGoToPantry }: Prop
   }, [lines]);
 
   const hasBuyable = lines.some((l) => l.effectivePacks > 0);
+  // В корзину ВВ идут только сопоставленные позиции (есть vvXmlId) с пачками к покупке.
+  const hasCartItems = lines.some((l) => l.vvXmlId && l.effectivePacks > 0);
+
+  /** Собрать ссылку(и) на корзину ВкусВилл из покупаемых сопоставленных позиций. */
+  const openCart = () => {
+    const cartLines = lines.map((l) => ({ vvXmlId: l.vvXmlId, quantity: l.effectivePacks }));
+    startTransition(async () => {
+      const result = await createCartLinksAction(cartLines);
+      setCart(result);
+    });
+  };
 
   return (
     <div className={`shop${compact ? " is-compact" : ""}${pending ? " is-busy" : ""}`}>
@@ -164,7 +186,10 @@ export function PokupkiContent({ list, onList, onConfirmed, onGoToPantry }: Prop
       {/* Сводка: итог ₽ и остаток к покупке + режим просмотра. */}
       <div className="group shop-summary">
         <div className="shop-total">
-          <div className="shop-total-rub num">{rub(total)} ₽</div>
+          <div className="shop-total-rub num">
+            {approxCount > 0 ? "≈ " : ""}
+            {rub(total)} ₽
+          </div>
           <div className="shop-total-of num">
             {lines.length} поз.
             {boughtCount > 0 ? ` · куплено ${boughtCount}` : ""}
@@ -172,6 +197,14 @@ export function PokupkiContent({ list, onList, onConfirmed, onGoToPantry }: Prop
         </div>
         {mounted && remaining !== total ? (
           <div className="shop-remaining num">Осталось купить: {rub(remaining)} ₽</div>
+        ) : null}
+        {approxCount > 0 ? (
+          <div className="shop-approx">
+            <span className="shop-approx-badge">приблизительно</span>
+            <span>
+              {approxCount} поз. без цены ВкусВилл — не учтены в сумме. Итог занижен.
+            </span>
+          </div>
         ) : null}
         <div className="shop-hint">
           Список собран из плана недели целыми пачками за вычетом кладовки. Правка
@@ -231,7 +264,16 @@ export function PokupkiContent({ list, onList, onConfirmed, onGoToPantry }: Prop
                     </div>
                   </div>
                   <div className="shop-side">
-                    <div className="shop-cost num">{rub(l.effCost)} ₽</div>
+                    {l.priced ? (
+                      <div className="shop-cost num">{rub(l.effCost)} ₽</div>
+                    ) : (
+                      <div
+                        className="shop-cost shop-cost-noprice"
+                        title="Нет мэтча с ВкусВилл — цена неизвестна, в сумму не входит"
+                      >
+                        цена ?
+                      </div>
+                    )}
                     <div className="shop-stepper no-print">
                       <button
                         type="button"
@@ -280,10 +322,60 @@ export function PokupkiContent({ list, onList, onConfirmed, onGoToPantry }: Prop
         >
           {pending ? "Обновляем…" : "Обновить из плана"}
         </button>
+        {hasCartItems ? (
+          <button type="button" className="btn tinted" onClick={openCart} disabled={pending}>
+            {pending ? "Собираем корзину…" : "Открыть корзину во ВкусВилл"}
+          </button>
+        ) : null}
         <button type="button" className="btn" onClick={confirm} disabled={pending || !hasBuyable}>
           Подтвердить покупку
         </button>
       </div>
+
+      {/* Ссылка(и) на предзаполненную корзину ВВ. Это ссылка, не заказ/оплата. */}
+      {cart ? (
+        <div className="group cart-links no-print">
+          {cart.empty ? (
+            <div className="shop-hint">
+              В корзину ВкусВилл пока нечего добавить: ни одна покупаемая позиция не
+              сопоставлена с товаром ВкусВилл.
+            </div>
+          ) : cart.links.length === 0 ? (
+            <div className="shop-hint">{cart.error ?? "Не удалось собрать корзину."}</div>
+          ) : (
+            <>
+              <div className="cart-links-title">
+                {cart.links.length === 1
+                  ? "Корзина ВкусВилл готова"
+                  : `Корзина не влезла в одну ссылку — собрали ${cart.links.length} корзин`}
+              </div>
+              {cart.links.length > 1 ? (
+                <div className="shop-hint">
+                  Одна ссылка ВкусВилл держит до 20 позиций, поэтому список разбит на
+                  части. Открывайте по очереди — каждая добавит свою порцию продуктов.
+                </div>
+              ) : null}
+              <div className="cart-links-list">
+                {cart.links.map((url, i) => (
+                  <a
+                    key={url}
+                    className="btn"
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {cart.links.length === 1 ? "Открыть корзину" : `Открыть корзину ${i + 1}`}
+                  </a>
+                ))}
+              </div>
+              {cart.error ? <div className="shop-hint">{cart.error}</div> : null}
+              <div className="shop-hint">
+                Это ссылка на корзину, а не заказ и не оплата — авторизация не нужна.
+              </div>
+            </>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

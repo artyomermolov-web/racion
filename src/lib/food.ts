@@ -20,6 +20,14 @@ export interface IngredientRow {
   /** Масса одной штуки, г — только у штучных продуктов; иначе null (тикет 09:
    *  штучный ввод в дневнике доступен только при заданном грамм-эквиваленте). */
   gramsPerPiece: number | null;
+  /** Провенанс (тикет 01): "seed" (фолбэк) | "vkusvill" (настоящие КБЖУ/цена). */
+  source: string;
+  /** Цена ВВ, ₽ за пачку (по source="vkusvill" — настоящая; иначе ориентир). */
+  pricePerPack: number;
+  /** Старая цена ₽ до скидки — только для бейджа «Акция» (null — нет). */
+  vvPriceOld: number | null;
+  /** % скидки ВВ — для бейджа (null — нет). */
+  vvDiscountPct: number | null;
 }
 
 export interface RecipeRow {
@@ -75,6 +83,10 @@ export async function getIngredients(userId: string): Promise<IngredientRow[]> {
     allergens: r.allergens.map((a) => a.allergen),
     own: r.ownerUserId === userId,
     gramsPerPiece: r.gramsPerPiece,
+    source: r.source,
+    pricePerPack: r.pricePerPack,
+    vvPriceOld: r.vvPriceOld,
+    vvDiscountPct: r.vvDiscountPct,
   }));
 }
 

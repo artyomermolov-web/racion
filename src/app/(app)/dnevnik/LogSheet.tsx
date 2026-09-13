@@ -34,7 +34,13 @@ import {
   updateEntryAction,
   getLogSegmentsAction,
 } from "@/app/actions/diary";
-import { SLOT_LABELS, massUnit, label } from "@/lib/food-labels";
+import {
+  SLOT_LABELS,
+  massUnit,
+  label,
+  groupIcon,
+  GROUP_ICON_FALLBACK,
+} from "@/lib/food-labels";
 
 const collator = new Intl.Collator("ru");
 
@@ -219,13 +225,19 @@ const SEGMENT_OPTIONS: SegmentedOption[] = [
   { key: "own", label: "Своё" },
 ];
 
-/** Строка выбора еды: название (+пометка «Своё») · подпись КБЖУ · шеврон. */
+/**
+ * Строка-карточка выбора еды (тикет 12): значок группы · название (+пометка
+ * «Своё») · подпись КБЖУ · шеврон. Значок — эмодзи по группе продукта (у рецепта
+ * группы нет → тарелка-fallback), визуальная опора «как в Yazio».
+ */
 function FoodRow({
+  icon,
   name,
   own,
   sub,
   onClick,
 }: {
+  icon: string;
   name: string;
   own: boolean;
   sub: string;
@@ -237,6 +249,9 @@ function FoodRow({
       className="row food-row pick-row"
       onClick={onClick}
     >
+      <span className="food-icon" aria-hidden="true">
+        {icon}
+      </span>
       <div className="grow">
         <div className="food-title">
           {name}
@@ -360,6 +375,7 @@ function SearchContent({
                 {shownRecipes.map((r) => (
                   <FoodRow
                     key={r.id}
+                    icon={GROUP_ICON_FALLBACK}
                     name={r.name}
                     own={r.own}
                     sub={recipeSub(r)}
@@ -376,6 +392,7 @@ function SearchContent({
                 {shownIngredients.map((i) => (
                   <FoodRow
                     key={i.id}
+                    icon={groupIcon(i.group)}
                     name={i.name}
                     own={i.own}
                     sub={ingredientSub(i)}
@@ -397,6 +414,7 @@ type DataSegment = Exclude<SegmentKey, "search">;
 /** Строка выбора из сегмента: резолв ссылки в данные строки базы. */
 interface ResolvedRef {
   key: string;
+  icon: string;
   name: string;
   own: boolean;
   sub: string;
@@ -413,11 +431,25 @@ function resolveSegmentRef(
   if (ref.source === "ingredient") {
     const i = ingById.get(ref.refId);
     if (!i) return null;
-    return { key, name: i.name, own: i.own, sub: ingredientSub(i), pick: ingredientToPick(i) };
+    return {
+      key,
+      icon: groupIcon(i.group),
+      name: i.name,
+      own: i.own,
+      sub: ingredientSub(i),
+      pick: ingredientToPick(i),
+    };
   }
   const r = recById.get(ref.refId);
   if (!r) return null;
-  return { key, name: r.name, own: r.own, sub: recipeSub(r), pick: recipeToPick(r) };
+  return {
+    key,
+    icon: GROUP_ICON_FALLBACK,
+    name: r.name,
+    own: r.own,
+    sub: recipeSub(r),
+    pick: recipeToPick(r),
+  };
 }
 
 /** Пустые состояния сегментов (нет истории / избранного / своей еды). */
@@ -482,6 +514,7 @@ function SegmentContent({
         {items.map((it) => (
           <FoodRow
             key={it.key}
+            icon={it.icon}
             name={it.name}
             own={it.own}
             sub={it.sub}

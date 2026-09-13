@@ -10,6 +10,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { EmptyState } from "@/components/ios/EmptyState";
 import { DaySummary } from "@/components/DaySummary";
 import { getDayLogAction } from "@/app/actions/diary";
@@ -56,6 +57,15 @@ function relLabel(key: string, todayKey: string): string {
   return formatDate(key);
 }
 
+/** Валидный ключ дня из URL (?date=YYYY-MM-DD), иначе null. Проверка не только формы,
+ *  но и существования даты: несуществующие (2025-13-45) отсеиваем round-trip через
+ *  toKey — иначе битый ?date= увёл бы Дневник на нормализованный «фантомный» день. */
+function dateParam(raw: string | null): string | null {
+  if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+  const [y, m, d] = raw.split("-").map(Number);
+  return toKey(new Date(y, m - 1, d)) === raw ? raw : null;
+}
+
 export function DiaryScreen({
   ingredients,
   recipes,
@@ -63,6 +73,11 @@ export function DiaryScreen({
   ingredients: IngredientRow[];
   recipes: RecipeRow[];
 }) {
+  // ?date= из экрана «Неделя»: открыть Дневник сразу на этом дне. Читаем реактивно
+  // на клиенте — клиентская <Link>-навигация обновляет query, а не подменённый из
+  // кэша сегмент (тикет 13).
+  const searchParams = useSearchParams();
+  const urlDate = dateParam(searchParams.get("date"));
   // Локальная дата инициализируется на клиенте после монтирования (SSR не знает
   // таймзону пользователя) — до этого держим null и не рендерим содержимое.
   const [todayKey, setTodayKey] = useState<string | null>(null);
@@ -78,8 +93,12 @@ export function DiaryScreen({
   useEffect(() => {
     const t = toKey(new Date());
     setTodayKey(t);
-    setDate(t);
-  }, []);
+    // «Сегодня» — всегда локальная дата (для подписей Сегодня/Вчера/Завтра); стартовый
+    // день берём из ?date= (переход с экрана «Неделя»), иначе — сегодня. Эффект
+    // пересинхронизирует день при смене значения ?date= (переход на другой день недели);
+    // повторный переход на тот же ?date= — no-op (день уже открыт на нём).
+    setDate(urlDate ?? t);
+  }, [urlDate]);
 
   useEffect(() => {
     if (!date) return;

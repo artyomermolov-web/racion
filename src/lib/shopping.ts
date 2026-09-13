@@ -9,6 +9,7 @@ import { realOnHandForUser } from "@/lib/pantry";
 import {
   buildShoppingList,
   saleQuantity,
+  type IngredientSource,
   type ShoppingIngredient,
   type ShoppingList,
   type ShoppingPlanItem,
@@ -28,7 +29,7 @@ export async function buildShoppingListForPlan(
   onHand: Record<string, number> = {},
 ): Promise<ShoppingList> {
   const recipeIds = [...new Set(plan.map((p) => p.recipeId))];
-  if (recipeIds.length === 0) return { lines: [], totalCost: 0 };
+  if (recipeIds.length === 0) return { lines: [], totalCost: 0, partial: false, excludedCount: 0 };
 
   const rows = await prisma.recipe.findMany({
     where: { id: { in: recipeIds } },
@@ -57,6 +58,10 @@ export async function buildShoppingListForPlan(
         unit: i.unit as Unit,
         packSize: i.packSize,
         pricePerPack: i.pricePerPack,
+        // Провенанс (тикет 03): только vkusvill даёт цену в смету; остальное — фолбэк.
+        source: i.source as IngredientSource,
+        // SKU ВВ (тикет 04) — для ссылки-корзины; null у несопоставленных.
+        vvXmlId: i.vvXmlId,
       });
     }
   }
