@@ -1,16 +1,24 @@
 // Маппер «Товар ВВ → поля Ingredient» (тикет 01, spec.md шов 1, решение Q10).
 // Чистая функция без сети/БД — тестируется на фикстурах, применяется синком.
 //
-// Правила (Q10):
-//  • Штучный (unit="шт", масса в weight, кг) → unit=pcs, gramsPerPiece=weight·1000,
-//    packSize=1, pricePerPack=price.current.
-//  • Весовой/фасовка по массе → unit=g, packSize=weight·1000, pricePerPack=price.current.
-//    (Только эти два исхода — Q10. ВВ отдаёт массу упаковки в кг, поэтому граммовка
-//    корректна и для жидкостей; отдельного unit=ml не вводим — это было бы скрытым
-//    допущением плотности сверх спека.)
+// Правила (Q10, уточнено тикетом 06 по живой форме):
+//  • Штучный (unit="шт") → unit=pcs, gramsPerPiece=weight·1000, packSize=1,
+//    pricePerPack=price.current (у штучного товара price.current — цена за упаковку).
+//  • Весовой развес (unit="кг"/«г»/«мл»/«л») → unit=g, packSize=weight·1000
+//    (или FALLBACK, если веса нет). У развеса ВВ price.current — цена ЗА КИЛОГРАММ,
+//    поэтому pricePerPack пересчитывается под packSize: price.current·packSize/1000.
+//    Иначе смета завышалась бы (напр. развес с фолбэком 100 г брал бы полную ₽/кг за
+//    100 г — ×10). Отдельного unit=ml не вводим — это было бы скрытым допущением
+//    плотности сверх спека.
 //  • Скидка: смета по price.current; price.old/discount_percent → vvPriceOld/
 //    vvDiscountPct только для бейджа. Цена по карте лояльности НЕ подставляется.
 //  • Категория ВВ → русская подпись группы (Ingredient.group хранит подпись, не ключ).
+//
+// Ограничение (тикет 06): выдача ВВ даёт массу упаковки, но НЕ число штук в ней.
+// Для штучной МНОГО-единичной упаковки (напр. десяток яиц одной «штукой») per-piece
+// вывести нельзя — gramsPerPiece окажется массой всей пачки. Для одно-предметных
+// упаковок (бутылка, пачка) это корректно; корректная поштучная модель яиц живёт в
+// seed (packSize=10, gramsPerPiece=масса одного яйца) и синком не затирается.
 
 import type { Unit } from "@/core/shopping/types";
 import { parseVkusvillNutrition } from "./parse";
@@ -65,12 +73,15 @@ export function categoryToGroup(cat: VvCategory): string {
   return DEFAULT_GROUP;
 }
 
-/** Масса товара ВВ → кг. Живая форма — объект `{value}`; число — старая форма. */
+/**
+ * Масса товара ВВ → кг. Живая форма — объект `{value}`; число — старая форма.
+ * Неположительная/нечисловая масса → null (нулевой вес не должен давать packSize=0:
+ * это обнулило бы деление на пачки в смете — Infinity/NaN — и уронило gramsPerPiece в 0).
+ */
 function weightKg(weight: VvWeight | undefined): number | null {
   if (weight == null) return null;
-  if (typeof weight === "number") return Number.isFinite(weight) ? weight : null;
-  const v = weight.value;
-  return typeof v === "number" && Number.isFinite(v) ? v : null;
+  const v = typeof weight === "number" ? weight : weight.value;
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null;
 }
 
 /** Единица продажи по строке unit ВВ (Q10): «шт»→pcs, всё остальное (весовое)→g. */
@@ -101,6 +112,9 @@ export function productToIngredient(product: VvProduct): VvIngredient | null {
   const gramsPerPiece = isPiece ? weightGrams ?? null : null;
 
   const price = product.price;
+  // Штучный: price.current — цена за упаковку. Развес: price.current — цена за кг,
+  // приводим к цене за packSize граммов, иначе смета завышается (см. шапку файла).
+  const pricePerPack = round(isPiece ? price.current : (price.current * packSize) / 1000);
   return {
     name: product.name,
     group: categoryToGroup(product.category),
@@ -112,7 +126,7 @@ export function productToIngredient(product: VvProduct): VvIngredient | null {
     fiberPer100: parsed.nutrients.fiber,
     sodiumPer100: parsed.nutrients.sodium,
     packSize,
-    pricePerPack: price.current,
+    pricePerPack,
     shelfLifeDays: DEFAULT_SHELF_LIFE_DAYS,
     gramsPerPiece,
     source: "vkusvill",

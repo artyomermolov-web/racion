@@ -67,7 +67,8 @@ describe("productToIngredient — весовой товар", () => {
     expect(ing.unit).toBe("g");
     expect(ing.packSize).toBe(900);
     expect(ing.gramsPerPiece).toBeNull();
-    expect(ing.pricePerPack).toBe(95);
+    // Развес: price.current (95 ₽/кг) приводится к packSize: 95·900/1000 = 85.5.
+    expect(ing.pricePerPack).toBe(85.5);
   });
 
   it("без скидки поля скидки — null, vvXmlId из числа", () => {
@@ -173,9 +174,28 @@ describe("productToIngredient — реальная (живая) форма от�
     };
     const ing = productToIngredient(fillet)!;
     expect(ing.unit).toBe("g");
-    expect(ing.packSize).toBeGreaterThan(0);
+    expect(ing.packSize).toBe(100); // фолбэк развеса без веса
+    // Развес: 645 ₽/кг → цена за 100 г фолбэка = 64.5 (а не полные 645 за 100 г).
+    expect(ing.pricePerPack).toBe(64.5);
     expect(ing.group).toBe("Мясо и птица");
     expect(ing.carbPer100).toBe(0); // углеводов в строке нет
+  });
+
+  it("нулевая/битая масса → packSize фолбэк, а не 0 (нет деления на 0 в смете)", () => {
+    const zeroWeight: VvProduct = {
+      id: 999,
+      xml_id: 999,
+      name: "Развес с битой массой",
+      price: { current: 200 }, // ₽/кг
+      unit: "кг",
+      weight: { value: 0, unit: "кг" },
+      category: [{ name: "Овощи" }],
+      properties: [{ value: "белки 1 г, жиры 0 г, углеводы 5 г; 25 ккал" }],
+    };
+    const ing = productToIngredient(zeroWeight)!;
+    expect(ing.packSize).toBe(100); // 0 не должен стать packSize=0
+    expect(ing.pricePerPack).toBe(20); // 200·100/1000
+    expect(ing.gramsPerPiece).toBeNull();
   });
 
   it("товар без КБЖУ (свежие огурцы) → null, не источится", () => {
