@@ -147,4 +147,13 @@ describe("matchCatalogIngredient — нет разумного совпаден�
     expect(match("Гречневая крупа")).toBe("grechka");
     expect(match("Манная крупа")).toBe("manka");
   });
+
+  it("канон не уводит на продукт без корня запроса (яйцо ↦ курица при отсутствии яиц)", () => {
+    // Каталог с курицей, но без яиц: подсказка «курин» не должна утащить «Яйцо».
+    const noEggs = [
+      { name: "Куриное филе грудки", slug: "kur-file" },
+      { name: "Гречка ядрица", slug: "grechka" },
+    ];
+    expect(matchCatalogIngredient("Яйцо", noEggs)).toBeNull();
+  });
 });

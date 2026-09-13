@@ -143,6 +143,21 @@ describe("recipeToRecipe — импорт без пропусков", () => {
     expect(recipe).toBeNull();
   });
 
+  it("ингредиент с нулевой/невалидной массой выпадает из состава", () => {
+    const vv: VvRecipe = {
+      ...fullMatch,
+      id: 9030,
+      ingredients: [
+        { id: "0020015", name: "Гречка", grams: 200 },
+        { id: "0051002", name: "Филе", grams: 0 }, // нулевая масса — не берём
+        { id: "0060310", name: "Огурцы", grams: NaN as unknown as number }, // мусор
+      ],
+    };
+    const { recipe } = recipeToRecipe(vv, catalog);
+    expect(recipe!.items).toHaveLength(1);
+    expect(recipe!.items[0]).toEqual({ ingredientId: "grechka", grams: 200 });
+  });
+
   it("пустой список ингредиентов → пропуск (ratio 0)", () => {
     const { recipe, matchedRatio } = recipeToRecipe({ ...fullMatch, ingredients: [] }, catalog);
     expect(matchedRatio).toBe(0);

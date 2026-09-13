@@ -124,6 +124,9 @@ export function recipeToRecipe(
   const allergens = new Set<string>();
   let matchedCount = 0;
   for (const ing of ingredients) {
+    // Масса должна быть валидным положительным числом: 0/NaN/мусор из живого ответа
+    // ВВ дал бы NaN в КБЖУ рецепта — такой ингредиент в состав не берём.
+    if (!(ing.grams > 0)) continue;
     // Шаг 1 — точный мэтч по id/xml_id товара ВВ; шаг 2 — фолбэк по названию.
     let entry = catalogIndex.get(String(ing.id));
     if (!entry && ing.name && catalog.length) {
