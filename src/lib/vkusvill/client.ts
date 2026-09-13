@@ -155,6 +155,8 @@ export async function callTool<T>(
 
 /** Ответ `vkusvill_products_search` (нужные слайсу поля; остальное игнорируется). */
 export interface ProductsSearchData {
+  /** Живой ключ выдачи — `items`; `products` терпим как исторический синоним. */
+  items?: unknown[];
   products?: unknown[];
   meta?: { has_more?: boolean; page?: number };
 }
@@ -210,7 +212,7 @@ export async function productsSearchAll(
     const res = await productsSearch(q, { page, mode: params.mode, sort: params.sort }, opts);
     if (!res.ok) return { products, pages, incomplete: true, error: res.error };
     pages++;
-    products.push(...(res.data.products ?? []));
+    products.push(...(res.data.items ?? res.data.products ?? []));
     if (!res.data.meta?.has_more) return { products, pages, incomplete: false };
   }
   // Вышли по cap — has_more мог остаться true.

@@ -19,8 +19,21 @@ export interface VvPrice {
   discount_percent?: number | null;
 }
 
-/** Категория товара ВВ (в ответе — объект с именем; строка/пусто допускаются). */
-export type VvCategory = { id?: number; name?: string } | string | null | undefined;
+/** Один узел категории ВВ. */
+export type VvCategoryNode = { id?: number; name?: string };
+
+/**
+ * Категория товара ВВ. Живой ответ отдаёт МАССИВ узлов от листа к корню
+ * (напр. `[{name:"Огурцы"},{name:"Овощи"},…]`); строка/один объект/пусто тоже
+ * допускаются (устойчивость к разным формам ответа).
+ */
+export type VvCategory = VvCategoryNode | VvCategoryNode[] | string | null | undefined;
+
+/**
+ * Масса товара ВВ. Живой ответ отдаёт объект `{value, unit}` (напр.
+ * `{value:1, unit:"кг"}`); допускается и число (кг) — старая/упрощённая форма.
+ */
+export type VvWeight = number | { value?: number | null; unit?: string } | null;
 
 /** Одно свойство карточки ВВ; КБЖУ лежит в `value` неструктурной строкой. */
 export interface VvProperty {
@@ -38,8 +51,8 @@ export interface VvProduct {
   price: VvPrice;
   /** Единица продажи: «шт» — штучный; «кг»/«г»/«мл»/«л» — весовой/фасовка. */
   unit: string;
-  /** Масса упаковки, кг (для штучного — масса одной штуки). */
-  weight?: number | null;
+  /** Масса упаковки, кг (для штучного — масса одной штуки). Живая форма — `{value,unit}`. */
+  weight?: VvWeight;
   category?: VvCategory;
   properties?: VvProperty[];
 }

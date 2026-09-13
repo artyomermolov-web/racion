@@ -14,7 +14,7 @@
 
 import type { Unit } from "@/core/shopping/types";
 import { parseVkusvillNutrition } from "./parse";
-import type { VvCategory, VvIngredient, VvProduct } from "./types";
+import type { VvCategory, VvIngredient, VvProduct, VvWeight } from "./types";
 
 // Срок годности ВВ в ответе поиска не отдаётся; для тонкого слайса — консервативный
 // дефолт (двое суток свежего продукта переживут, кладовка тикета 19 использует его
@@ -43,16 +43,34 @@ const GROUP_RULES: [RegExp, string][] = [
 
 const DEFAULT_GROUP = "Бакалея";
 
-function categoryName(cat: VvCategory): string {
-  if (!cat) return "";
-  return typeof cat === "string" ? cat : cat.name ?? "";
+/** Имена категории по порядку (лист → корень); строка/объект → один элемент. */
+function categoryNames(cat: VvCategory): string[] {
+  if (!cat) return [];
+  const nodes = Array.isArray(cat) ? cat : [cat];
+  return nodes
+    .map((n) => (typeof n === "string" ? n : n?.name ?? ""))
+    .filter((s) => s.length > 0);
 }
 
-/** Категория ВВ → русская подпись группы Ingredient (фолбэк «Бакалея»). */
+/**
+ * Категория ВВ → русская подпись группы Ingredient (фолбэк «Бакалея»). Для
+ * массива категорий (живая форма — лист→корень) берём ПЕРВОЕ имя, давшее
+ * не-дефолтную группу: лист самый конкретный, но у него имя-подкатегория может не
+ * содержать ключевого слова («Огурцы» → пусто), тогда спускаемся к родителю («Овощи»).
+ */
 export function categoryToGroup(cat: VvCategory): string {
-  const name = categoryName(cat);
-  for (const [re, group] of GROUP_RULES) if (re.test(name)) return group;
+  for (const name of categoryNames(cat)) {
+    for (const [re, group] of GROUP_RULES) if (re.test(name)) return group;
+  }
   return DEFAULT_GROUP;
+}
+
+/** Масса товара ВВ → кг. Живая форма — объект `{value}`; число — старая форма. */
+function weightKg(weight: VvWeight | undefined): number | null {
+  if (weight == null) return null;
+  if (typeof weight === "number") return Number.isFinite(weight) ? weight : null;
+  const v = weight.value;
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
 /** Единица продажи по строке unit ВВ (Q10): «шт»→pcs, всё остальное (весовое)→g. */
@@ -75,7 +93,8 @@ export function productToIngredient(product: VvProduct): VvIngredient | null {
   if (!parsed) return null;
 
   const unit = saleUnit(product.unit);
-  const weightGrams = product.weight ? round(product.weight * 1000) : null;
+  const wKg = weightKg(product.weight);
+  const weightGrams = wKg != null ? round(wKg * 1000) : null;
 
   const isPiece = unit === "pcs";
   const packSize = isPiece ? 1 : weightGrams ?? FALLBACK_PACK_GRAMS;

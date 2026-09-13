@@ -95,7 +95,115 @@ describe("productToIngredient — крайние случаи", () => {
   });
 });
 
+// Живая форма карточки ВВ (сверено с MCP, тикет 06): weight — объект {value,unit},
+// category — массив узлов лист→корень, КБЖУ строчными с точкой и хвостом «Поставщики:».
+describe("productToIngredient — реальная (живая) форма ответа", () => {
+  const liveMilk: VvProduct = {
+    id: 173,
+    xml_id: 173,
+    name: "Молоко 3,2%, 1 л",
+    price: { current: 93 },
+    unit: "шт",
+    weight: { value: 1, unit: "кг" },
+    category: [
+      { id: 50390, name: "Молоко, сливки, сгущёнка" },
+      { id: 50388, name: "Молочные продукты, яйцо" },
+    ],
+    properties: [
+      {
+        name: "Пищевая и энергетическая ценность в 100 г",
+        value:
+          'ООО "ЛЕБЕДЯНЬМОЛОКО": белки 3 г, жиры 3.2 г, углеводы 4.7 г; 60 ккал<br>ООО "КОСМОЛ": белки 3 г, жиры 3.2 г, углеводы 4.7 г; 59.6 ккал',
+      },
+    ],
+  };
+
+  it("объектный weight → gramsPerPiece/packSize (не NaN)", () => {
+    const ing = productToIngredient(liveMilk)!;
+    expect(ing.unit).toBe("pcs");
+    expect(ing.gramsPerPiece).toBe(1000);
+    expect(ing.packSize).toBe(1);
+    expect(Number.isNaN(ing.gramsPerPiece)).toBe(false);
+  });
+
+  it("КБЖУ строчными с точкой и «; ккал» парсится, варианты усредняются", () => {
+    const ing = productToIngredient(liveMilk)!;
+    expect(ing.proteinPer100).toBe(3);
+    expect(ing.fatPer100).toBe(3.2);
+    expect(ing.carbPer100).toBe(4.7);
+    expect(ing.kcalPer100).toBe(59.8); // (60 + 59.6) / 2
+  });
+
+  it("массив category (лист→корень) → русская подпись группы", () => {
+    expect(productToIngredient(liveMilk)!.group).toBe("Молочные продукты");
+  });
+
+  it("хвост «Поставщики:…» не мешает разбору единственного варианта", () => {
+    const curd: VvProduct = {
+      id: 185,
+      xml_id: 185,
+      name: "Творог 5%, 400 г",
+      price: { current: 198 },
+      unit: "шт",
+      weight: { value: 0.4, unit: "кг" },
+      category: [{ name: "Творог" }, { name: "Молочные продукты, яйцо" }],
+      properties: [
+        {
+          name: "Пищевая и энергетическая ценность в 100 г",
+          value: 'белки 16 г, жиры 5 г, углеводы 3 г; 121 ккал Поставщики:ООО "НИКОН";ООО "КОСМОЛ"',
+        },
+      ],
+    };
+    const ing = productToIngredient(curd)!;
+    expect(ing.proteinPer100).toBe(16);
+    expect(ing.kcalPer100).toBe(121);
+    expect(ing.gramsPerPiece).toBe(400);
+  });
+
+  it("весовой (кг) без weight → packSize фолбэк, не падает", () => {
+    const fillet: VvProduct = {
+      id: 488,
+      xml_id: 488,
+      name: "Филе грудки цыпленка-бройлера",
+      price: { current: 645 },
+      unit: "кг",
+      weight: null,
+      category: [{ name: "Курица" }, { name: "Мясо, птица" }],
+      properties: [{ value: "белки 20 г, жиры 4 г, ; 116 ккал" }],
+    };
+    const ing = productToIngredient(fillet)!;
+    expect(ing.unit).toBe("g");
+    expect(ing.packSize).toBeGreaterThan(0);
+    expect(ing.group).toBe("Мясо и птица");
+    expect(ing.carbPer100).toBe(0); // углеводов в строке нет
+  });
+
+  it("товар без КБЖУ (свежие огурцы) → null, не источится", () => {
+    const cucumber: VvProduct = {
+      id: 16645,
+      xml_id: 16645,
+      name: "Огурцы гладкие",
+      price: { current: 160 },
+      unit: "кг",
+      weight: null,
+      category: [{ name: "Огурцы" }, { name: "Овощи" }],
+      properties: [
+        { name: "Пищевая и энергетическая ценность в 100 г", value: "" },
+        { name: "Состав", value: "Огурцы гладкие" },
+      ],
+    };
+    expect(productToIngredient(cucumber)).toBeNull();
+  });
+});
+
 describe("categoryToGroup — категория ВВ → русская подпись группы", () => {
+  it("массив категорий: первое имя с не-дефолтной группой (лист→корень)", () => {
+    expect(categoryToGroup([{ name: "Яйцо" }, { name: "Молочные продукты, яйцо" }])).toBe("Яйца");
+    expect(categoryToGroup([{ name: "Огурцы" }, { name: "Овощи" }])).toBe("Овощи");
+    expect(categoryToGroup([{ name: "Курица" }, { name: "Мясо, птица" }])).toBe("Мясо и птица");
+    expect(categoryToGroup([])).toBe("Бакалея");
+  });
+
   it("сопоставляет по ключевым словам названия", () => {
     expect(categoryToGroup({ name: "Молоко, сыр, яйцо" })).toBe("Молочные продукты");
     expect(categoryToGroup({ name: "Мясо и птица" })).toBe("Мясо и птица");
